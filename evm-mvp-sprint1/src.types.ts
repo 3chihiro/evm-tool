@@ -1,0 +1,36 @@
+export type ResourceType = '社内' | '協力';
+
+export interface TaskRow {
+  projectName: string;
+  taskId: number;
+  taskName: string;
+  start: string; // YYYY-MM-DD
+  finish: string; // YYYY-MM-DD
+  durationDays?: number;
+  progressPercent?: number;
+  resourceType?: ResourceType;
+  contractorName?: string;
+  unitCost?: number;
+  contractAmount?: number;
+  plannedCost?: number;
+  actualCost?: number;
+  notes?: string;
+}
+
+export interface ImportError {
+  row: number; // 1-based, includes header row in count
+  column?: string;
+  message: string;
+  value?: string;
+}
+
+export interface ImportResult {
+  tasks: TaskRow[];
+  errors: ImportError[];
+  stats: {
+    rows: number; // data rows (excluding header)
+    imported: number;
+    failed: number; // rows with at least one error considered failed
+  };
+}
+

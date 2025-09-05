@@ -1,0 +1,4 @@
+ProjectName,TaskID,TaskName,Start,Finish,DurationDays,ProgressPercent,ResourceType,ContractorName,UnitCost,ContractAmount,PlannedCost,ActualCost,Notes
+橋梁補修工事A,1,足場組立,2025-01-05,2025-01-10,6,100,協力,株式会社スカイ足場,50000,300000,300000,290000,高所作業含む
+橋梁補修工事A,2,ケレン,2025-01-11,2025-01-15,5,80,社内,,20000,,100000,80000,第1種ケレン
+橋梁補修工事A,3,下塗り（プライマー）,2025-01-16,2025-01-20,5,60,協力,塗装工業株式会社,,600000,300000,180000,鋼材防食プライマー
