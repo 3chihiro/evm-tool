@@ -12,7 +12,7 @@
   },
   "include": [
     "evm-mvp-sprint1/**/*.ts",
+    "evm-mvp-sprint2/**/*.ts",
     "tests/**/*.ts"
   ]
 }
-
