@@ -17,7 +17,8 @@ export default function GanttCanvas() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext?.('2d') as CanvasRenderingContext2D | null
+    if (!ctx) return
     const width = 900
     const headerHeight = 60
     const rowH = 28
@@ -77,4 +78,3 @@ export default function GanttCanvas() {
 
 // Exported only for unit tests
 export const __test = { dateToX }
-
