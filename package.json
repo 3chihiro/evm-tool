@@ -6,7 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev": "concurrently -k \"vite --config ui/vite.config.ts\" \"wait-on tcp:5173 && cross-env VITE_DEV=1 electron .\"",
+    "dev": "concurrently -k \"tsc -p electron --watch\" \"vite --config ui/vite.config.ts\" \"wait-on tcp:5173 && cross-env VITE_DEV=1 electron .\"",
     "build:renderer": "vite build --config ui/vite.config.ts",
     "build:electron": "electron-builder -c.extraMetadata.main=dist/main.js",
     "build": "npm run build:renderer && tsc -p electron && npm run build:electron",
