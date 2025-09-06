@@ -4,6 +4,7 @@ import TaskTable from './components/TaskTable'
 import EvmCard from './components/EvmCard'
 
 export default function App() {
+  console.log('[renderer] App render')
   return (
     <div className="app-grid">
       <header className="header">
