@@ -10,7 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: [],
     globals: true,
-    include: ['ui/tests/**/*.test.tsx'],
+    include: ['tests/**/*.test.tsx'],
     pool: 'threads',
     maxThreads: 1,
   },
