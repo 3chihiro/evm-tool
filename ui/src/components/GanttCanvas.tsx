@@ -21,7 +21,7 @@ export default function GanttCanvas() {
     try {
       ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null
     } catch {
-      // in jsdom, HTMLCanvasElement.getContext is not implemented
+      // jsdom では HTMLCanvasElement.getContext が未実装のため、描画をスキップ
       return
     }
     if (!ctx) return
@@ -34,7 +34,7 @@ export default function GanttCanvas() {
 
     ctx.clearRect(0, 0, width, height)
 
-    // header
+    // 三段ヘッダ描画
     const header = buildTripleHeader(chartStart, chartEnd, cfg)
     ctx.fillStyle = '#fafafa'
     ctx.fillRect(0, 0, width, headerHeight)
@@ -54,18 +54,18 @@ export default function GanttCanvas() {
       y += 16
     })
 
-    // rows + bars
+    // 各行とバー描画
     dummyTasks.forEach((t, i) => {
       const top = headerHeight + i * rowH
-      // plan (blue)
+      // 計画バー（青）
       const p = planBar(t as any, chartStart, cfg)
       ctx.fillStyle = '#4C78A8'
       ctx.fillRect(p.x, top + 6, p.w, 10)
-      // actual (green) — short dummy
+      // 実績バー（緑）— ダミー短尺
       const a = actualBar(t as any, chartStart, cfg)
       ctx.fillStyle = '#59A14F'
       ctx.fillRect(a.x, top + 18, a.w, 6)
-      // row separator
+      // 行区切り線
       ctx.strokeStyle = '#f0f0f0'
       ctx.beginPath()
       ctx.moveTo(0, top + rowH)
@@ -82,5 +82,5 @@ export default function GanttCanvas() {
   )
 }
 
-// Exported only for unit tests
+// ユニットテスト用のエクスポート
 export const __test = { dateToX }
