@@ -1,9 +1,5 @@
 import { app, BrowserWindow } from 'electron';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { join } from 'node:path';
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -36,4 +32,3 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
