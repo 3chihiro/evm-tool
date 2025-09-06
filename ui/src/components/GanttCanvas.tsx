@@ -17,7 +17,13 @@ export default function GanttCanvas() {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext?.('2d') as CanvasRenderingContext2D | null
+    let ctx: CanvasRenderingContext2D | null = null
+    try {
+      ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null
+    } catch {
+      // in jsdom, HTMLCanvasElement.getContext is not implemented
+      return
+    }
     if (!ctx) return
     const width = 900
     const headerHeight = 60
