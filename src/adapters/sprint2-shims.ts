@@ -1,4 +1,5 @@
-// Sprint2 shims: keep the same interface so UI can switch later.
+// Sprint2 が未導入のためのスタブ実装。
+// 将来 evm-mvp-sprint2 の実装に差し替えられるよう、I/F を維持する。
 
 export type GanttCfg = { pxPerDay: number }
 
@@ -20,7 +21,7 @@ export function buildTripleHeader(startISO: string, endISO: string, cfg: GanttCf
     }
   })
 
-  // group by ym
+  // 年月(ym)ごとにグルーピング
   const ymMap = new Map<string, { label: string; x: number; w: number }>()
   segments.forEach((s) => {
     const g = ymMap.get(s.ym)
@@ -73,7 +74,7 @@ export function formatJPY(n: number) {
 }
 
 export function computeEvmStub(tasks: Task[]) {
-  // simple fixed/dummy computation preserving interface
+  // 簡易な固定値のスタブ計算（I/F を保つため）
   const PV = 1_000_000
   const EV = 800_000
   const AC = 900_000
@@ -83,4 +84,3 @@ export function computeEvmStub(tasks: Task[]) {
   const CPI = AC ? EV / AC : 0
   return { PV, EV, AC, SV, CV, SPI, CPI }
 }
-
