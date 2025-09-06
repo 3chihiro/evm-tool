@@ -11,6 +11,7 @@ export default defineConfig({
     setupFiles: [],
     globals: true,
     include: ['ui/tests/**/*.test.tsx'],
+    pool: 'threads',
+    maxThreads: 1,
   },
 })
-

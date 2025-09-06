@@ -5,6 +5,7 @@ export default defineConfig({
     include: ['tests/**/*.ts'],
     environment: 'node',
     exclude: ['ui/**'],
+    pool: 'threads',
+    maxThreads: 1,
   },
 })
-
