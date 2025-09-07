@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import GanttCanvas from './components/GanttCanvas'
 import TaskTable from './components/TaskTable'
 import TaskDetailsPanel from './components/TaskDetailsPanel'
+import ErrorBoundary from './components/ErrorBoundary'
 import EvmCard from './components/EvmCard'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
 import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
@@ -20,7 +21,9 @@ export default function App() {
     try {
       const saved = localStorage.getItem('evm_calendar_holidays')
       const holidays = saved ? JSON.parse(saved) as string[] : []
-      return { holidays }
+      const offSaved = localStorage.getItem('evm_calendar_offweek')
+      const offWeekdays = offSaved ? JSON.parse(offSaved) as number[] : [0,6]
+      return { holidays, offWeekdays }
     } catch { return { holidays: [] } }
   })
 
@@ -67,8 +70,18 @@ export default function App() {
   const onRemoveHoliday = useCallback((iso: string) => {
     setCalendar((c) => {
       const next = { holidays: (c.holidays ?? []).filter((d) => d !== iso) }
-      localStorage.setItem('evm_calendar_holidays', JSON.stringify(next.holidays))
-      return next
+      const merged: Calendar = { holidays: next.holidays, offWeekdays: c.offWeekdays }
+      localStorage.setItem('evm_calendar_holidays', JSON.stringify(merged.holidays))
+      return merged
+    })
+  }, [])
+  const toggleOffWeek = useCallback((w: number) => {
+    setCalendar((c) => {
+      const set = new Set(c.offWeekdays ?? [0,6])
+      if (set.has(w)) set.delete(w); else set.add(w)
+      const merged: Calendar = { holidays: c.holidays ?? [], offWeekdays: Array.from(set).sort() }
+      localStorage.setItem('evm_calendar_offweek', JSON.stringify(merged.offWeekdays))
+      return merged
     })
   }, [])
 
@@ -84,6 +97,7 @@ export default function App() {
         </div>
       </header>
       <section className="gantt">
+        <ErrorBoundary>
         <GanttCanvas
           tasks={tasks}
           onTasksChange={(cmd: Command<TaskRow[]>) => hist.run(cmd)}
@@ -91,9 +105,12 @@ export default function App() {
           onSelect={setSelectedIds}
           calendar={calendar}
         />
+        </ErrorBoundary>
       </section>
       <section className="tasks">
+        <ErrorBoundary>
         <TaskDetailsPanel tasks={tasks} selectedIds={selectedIds} onTasksChange={(cmd) => hist.run(cmd)} />
+        </ErrorBoundary>
         <div style={{ height: 8 }} />
         <TaskTable tasks={tasks} selectedIds={selectedIds} onSelect={setSelectedIds} />
       </section>
@@ -121,6 +138,16 @@ export default function App() {
                 {d} <button className="btn" style={{ padding: '0 6px', marginLeft: 4 }} onClick={() => onRemoveHoliday(d)}>×</button>
               </span>
             ))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <div className="panel-title">固定休日（曜日）</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['日','月','火','水','木','金','土'].map((label, idx) => (
+                <label key={idx} style={{ fontSize: 12 }}>
+                  <input type="checkbox" checked={(calendar.offWeekdays ?? [0,6]).includes(idx)} onChange={() => toggleOffWeek(idx)} /> {label}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       </aside>

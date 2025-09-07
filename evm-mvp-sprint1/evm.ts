@@ -2,11 +2,12 @@ export type JpResourceType = '社内' | '協力'
 
 export type Calendar = {
   holidays?: string[] // YYYY-MM-DD
+  offWeekdays?: number[] // 0(Sun)-6(Sat) treated as non-working
 }
 
-const WEEKEND = new Set([0, 6]) // 0=Sun, 6=Sat
+const DEFAULT_OFF = new Set([0, 6]) // 0=Sun, 6=Sat
 
-export const DefaultCalendar: Calendar = { holidays: [] }
+export const DefaultCalendar: Calendar = { holidays: [], offWeekdays: [0,6] }
 
 function isHoliday(dateISO: string, cal: Calendar): boolean {
   const h = cal.holidays ?? []
@@ -16,7 +17,8 @@ function isHoliday(dateISO: string, cal: Calendar): boolean {
 export function isWorkingDayISO(dateISO: string, cal: Calendar = DefaultCalendar): boolean {
   const d = new Date(dateISO)
   const day = d.getDay()
-  if (WEEKEND.has(day)) return false
+  const off = new Set(cal.offWeekdays ?? Array.from(DEFAULT_OFF))
+  if (off.has(day)) return false
   return !isHoliday(dateISO, cal)
 }
 
@@ -144,4 +146,3 @@ export function computeEVM(tasks: EvmTaskLike[], asOfISO: string, cal: Calendar 
   const CPI = AC ? EV / AC : 0
   return { PV, EV, AC, SV, CV, SPI, CPI }
 }
-
