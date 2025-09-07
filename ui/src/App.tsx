@@ -3,7 +3,7 @@ import GanttCanvas from './components/GanttCanvas'
 import TaskTable from './components/TaskTable'
 import EvmCard from './components/EvmCard'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
-import { parseCsvTextBrowser } from '../../src/adapters'
+import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
 import { createUseHistory, type Command } from './lib/history'
 
 const useTasksHistory = createUseHistory<TaskRow[]>([])
@@ -39,6 +39,12 @@ export default function App() {
     if (saved) alert(`PDFを保存しました: ${saved}`)
   }, [])
 
+  const onExportCsv = useCallback(() => {
+    const text = toCsvBrowser(tasks)
+    const name = (projectName || 'project') + '.csv'
+    triggerDownloadCsv(name, text)
+  }, [tasks, projectName])
+
   return (
     <div className="app-grid">
       <header className="header">
@@ -46,6 +52,7 @@ export default function App() {
         <div style={{ marginLeft: '16px', fontSize: 12, color: '#666' }}>{projectName && `（${projectName}）`}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="file" accept=".csv" onChange={onFileChange} />
+          <button onClick={onExportCsv}>CSV出力</button>
           <button onClick={onExportPDF}>PDF出力</button>
         </div>
       </header>
