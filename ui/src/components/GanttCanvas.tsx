@@ -32,6 +32,7 @@ export default function GanttCanvas({
     startX: number
     base: { start: string; end: string }
     multiIds: string[]
+    cancelled?: boolean
   } | null>(null)
   const [preview, setPreview] = useState<Map<string, { start: string; end: string }>>(new Map())
   const [violations, setViolations] = useState<Set<string>>(new Set())
@@ -371,7 +372,14 @@ export default function GanttCanvas({
     const onPointerDown = (e: PointerEvent) => {
       const { mx, my } = toLocal(e)
       const h = hitTest(mx, my, hitsRef.current)
-      if (!h) return
+      if (!h) {
+        // 何もない場所をクリック → 選択解除（修飾キーなし）
+        if (!(e.metaKey || e.ctrlKey)) {
+          onSelect([])
+          setPreview(new Map())
+        }
+        return
+      }
       const clickedId = h.id
       const isAdd = e.metaKey || e.ctrlKey
       let newSelection = selectedIds.map(String)
@@ -385,7 +393,7 @@ export default function GanttCanvas({
 
       const multiIds = newSelection.length ? newSelection.map(String) : [clickedId]
       const base = baseDisplay.find((t) => t.id === clickedId)!
-      dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds }
+      dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds, cancelled: false }
       cv.setPointerCapture(e.pointerId)
       cv.style.cursor = h.kind.includes('resize') ? 'ew-resize' : 'grabbing'
     }
@@ -402,7 +410,7 @@ export default function GanttCanvas({
       const next = new Map(preview)
       const updates = Array.from(next.entries()) // [id, {start,end}]
       setPreview(new Map())
-      if (!updates.length) return
+      if (!updates.length || drag.cancelled) return
       if (violations.size > 0) {
         setToast('依存関係の制約により適用できません')
         setTimeout(() => setToast(null), 1500)
@@ -476,6 +484,17 @@ export default function GanttCanvas({
   // Keyboard operations: move/resize with arrows
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // ESCでドラッグ中止 & プレビュー廃棄
+      if (e.key === 'Escape') {
+        if (dragRef.current) {
+          dragRef.current.cancelled = true
+          setPreview(new Map())
+        } else if (selectedIds.length) {
+          // ESCで選択解除（ドラッグしていない場合）
+          onSelect([])
+        }
+        return
+      }
       if (!selectedIds.length) return
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) return
