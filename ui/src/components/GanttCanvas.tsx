@@ -274,6 +274,44 @@ export default function GanttCanvas({
       return { id: t.id, x: ax, y: i * rowH, w: aw, row: i, yBar: i * rowH + 4, hBar: 6 }
     })
 
+    // 依存線の描画（計画FS: predecessor end → successor start）
+    const idToIndex = new Map<string, number>()
+    displayTasks.forEach((t, idx) => idToIndex.set(t.id, idx))
+    // get predIds from original tasks prop
+    const predMap = new Map<string, number[]>()
+    tasks.forEach((row) => {
+      if (row.predIds && row.predIds.length) predMap.set(String(row.taskId), row.predIds.map(Number))
+    })
+    bctx.save()
+    bctx.strokeStyle = '#666'
+    bctx.lineWidth = 1
+    displayTasks.forEach((t) => {
+      const preds = predMap.get(t.id)
+      if (!preds) return
+      const toPlan = planBar(t as any, chartStart, cfg)
+      const toX = toPlan.x
+      const toY = (idToIndex.get(t.id) ?? 0) * rowH + 19 // plan band center
+      preds.forEach((pid) => {
+        const pIdx = idToIndex.get(String(pid))
+        if (pIdx == null) return
+        const pTask = displayTasks[pIdx]
+        const pPlan = planBar(pTask as any, chartStart, cfg)
+        const fromX = pPlan.x + pPlan.w
+        const fromY = pIdx * rowH + 19
+        // violation if successor starts before predecessor end (by date)
+        const isBad = new Date(t.start) < new Date(pTask.end)
+        bctx.strokeStyle = isBad ? '#d32f2f' : '#666'
+        // polyline: from -> (toX-10, fromY) -> (toX-10, toY) -> (toX, toY)
+        bctx.beginPath()
+        bctx.moveTo(fromX, fromY)
+        bctx.lineTo(toX - 10, fromY)
+        bctx.lineTo(toX - 10, toY)
+        bctx.lineTo(toX, toY)
+        bctx.stroke()
+      })
+    })
+    bctx.restore()
+
     // バーと行区切り
     displayTasks.forEach((t, i) => {
       const top = i * rowH

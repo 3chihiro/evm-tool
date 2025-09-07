@@ -3,22 +3,7 @@ import type { ImportError, ImportResult, TaskRow, ResourceType } from '../../evm
 
 type RowObject = Record<string, string>
 
-const HEADER_MAP: Record<string, keyof TaskRow> = {
-  ProjectName: 'projectName',
-  TaskID: 'taskId',
-  TaskName: 'taskName',
-  Start: 'start',
-  Finish: 'finish',
-  DurationDays: 'durationDays',
-  ProgressPercent: 'progressPercent',
-  ResourceType: 'resourceType',
-  ContractorName: 'contractorName',
-  UnitCost: 'unitCost',
-  ContractAmount: 'contractAmount',
-  PlannedCost: 'plannedCost',
-  ActualCost: 'actualCost',
-  Notes: 'notes',
-}
+const REQUIRED_HEADERS = ['ProjectName','TaskID','TaskName','Start','Finish']
 
 function stripBOM(s: string): string {
   if (!s) return s
@@ -143,8 +128,7 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
   const errors: ImportError[] = []
   const tasks: TaskRow[] = []
 
-  const requiredHeaders = Object.keys(HEADER_MAP)
-  for (const rh of requiredHeaders) {
+  for (const rh of REQUIRED_HEADERS) {
     if (!(rh in hmap)) {
       errors.push({ row: 1, column: rh, message: `Missing header: ${rh}` })
     }
@@ -171,6 +155,12 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
     const contractAmount = parseNumber(cell('ContractAmount'))
     const plannedCost = parseNumber(cell('PlannedCost'))
     const actualCost = parseNumber(cell('ActualCost'))
+    const actualStart = parseDateString(cell('ActualStart'))
+    const actualFinish = parseDateString(cell('ActualFinish'))
+    const depsRaw = cell('Dependencies')
+    const predIds = depsRaw && depsRaw.trim() !== ''
+      ? depsRaw.split(',').map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))
+      : undefined
     const notes = cell('Notes') || undefined
 
     if (!projectName) rowErrors.push({ row: r + 1, column: 'ProjectName', message: 'ProjectName required' })
@@ -197,6 +187,9 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
       plannedCost,
       actualCost,
       notes,
+      actualStart,
+      actualFinish,
+      predIds,
     }
 
     if (rowErrors.length === 0) {
@@ -212,4 +205,3 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
   const imported = tasks.length
   return { tasks, errors, stats: { rows: dataRows, imported, failed: Math.max(0, failed.size) } }
 }
-
