@@ -8,6 +8,8 @@ function iso(d?: string) { return d ?? '' }
 export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: { tasks: TaskRow[]; selectedIds: (string|number)[]; onTasksChange: (cmd: Command<TaskRow[]>) => void }) {
   const current = useMemo(() => tasks.find(t => String(t.taskId) === String(selectedIds[0])), [tasks, selectedIds])
   const [mode, setMode] = useState<'manual'|'auto'>('manual')
+  // Hooks must not be conditional: compute autoProgress safely even when no current
+  const autoProgress = useMemo(() => current ? calculateAutoProgress(current) : 0, [current])
 
   if (!current) return <div className="panel-title">工程情報（タスクを選択してください）</div>
 
@@ -27,16 +29,30 @@ export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: 
     apply({ predIds: arr.length ? arr : undefined })
   }
 
-  const autoProgress = useMemo(() => calculateAutoProgress(current), [current])
-
   return (
     <div>
       <div className="panel-title">工程情報</div>
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', gap: 8, alignItems: 'center' }}>
         <label>工程名</label>
         <input value={current.taskName} onChange={e => apply({ taskName: e.target.value })} />
-        <label>依存(IDs)</label>
-        <input placeholder="1,2,3" value={(current.predIds?.join(',') ?? '')} onChange={e => onDepsChange(e.target.value)} />
+        <label>依存（選択）</label>
+        <div>
+          <select multiple size={6}
+            value={(current.predIds?.map(String) ?? [])}
+            onChange={(e) => {
+              const opts = Array.from(e.currentTarget.selectedOptions).map(o => Number(o.value)).filter(n => Number.isFinite(n))
+              apply({ predIds: opts })
+            }}
+            style={{ minWidth: 200 }}
+          >
+            {tasks.filter(t => t.taskId !== current.taskId).map(t => (
+              <option key={t.taskId} value={t.taskId}>{t.taskId}: {t.taskName}</option>
+            ))}
+          </select>
+          <div style={{ marginTop: 4 }}>
+            <button className="btn" onClick={() => apply({ predIds: [] })}>クリア</button>
+          </div>
+        </div>
 
         <label>計画開始</label>
         <input type="date" value={iso(current.start)} disabled={!rules.canEditPlan} onChange={e => apply({ start: e.target.value })} />
@@ -87,4 +103,3 @@ function calculateAutoProgress(task: TaskRow): number {
     return 0
   }
 }
-
