@@ -209,6 +209,17 @@ export default function GanttCanvas({
 
     // 縦グリッド（日単位）
     const daySegs = (header as any)['day'] as Array<{ label: string; x: number; w: number }>
+    // 非稼働日の背景塗り（週末＋祝日）
+    const startDate = new Date(chartStart)
+    daySegs.forEach((s, i) => {
+      const d = new Date(startDate)
+      d.setDate(startDate.getDate() + i)
+      const iso = d.toISOString().slice(0, 10)
+      if (!isWorkingDayISO(iso, DefaultCalendar)) {
+        bctx.fillStyle = '#fafafa'
+        bctx.fillRect(s.x, 0, s.w, bodyHeight)
+      }
+    })
     bctx.strokeStyle = '#f5f5f5'
     daySegs.forEach((s) => {
       bctx.beginPath()
@@ -247,6 +258,10 @@ export default function GanttCanvas({
       const isSel = selectedIds.map(String).includes(t.id)
       bctx.fillStyle = '#000000'
       bctx.fillRect(p.x, top + 14, p.w, 10)
+      // グリップ表示（左右端）
+      bctx.fillStyle = '#666'
+      bctx.fillRect(p.x - 2, top + 14, 4, 10)
+      bctx.fillRect(p.x + p.w - 2, top + 14, 4, 10)
       if (isSel) {
         bctx.strokeStyle = '#ff4081'
         bctx.lineWidth = 1.5
@@ -457,6 +472,93 @@ export default function GanttCanvas({
     el.addEventListener('scroll', onScroll)
     return () => el.removeEventListener('scroll', onScroll)
   }, [chartStart, chartEnd])
+
+  // Keyboard operations: move/resize with arrows
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!selectedIds.length) return
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) return
+      const ids = selectedIds.map(String)
+      const step = e.shiftKey ? 5 : 1
+      const applyMove = (delta: number) => {
+        const next = new Map<string, { start: string; end: string }>()
+        ids.forEach((id) => {
+          const base = baseDisplay.find((t) => t.id === id)
+          if (!base) return
+          const s = new Date(base.start); s.setDate(s.getDate() + delta)
+          const f = new Date(base.end); f.setDate(f.getDate() + delta)
+          let sIso = s.toISOString().slice(0, 10)
+          let fIso = f.toISOString().slice(0, 10)
+          sIso = snapWorkingDay(sIso, delta >= 0 ? 1 : -1)
+          fIso = snapWorkingDay(fIso, delta >= 0 ? 1 : -1)
+          next.set(id, { start: sIso, end: fIso })
+        })
+        const bad = validateDeps(next)
+        if (bad.size) { setToast('依存関係の制約により適用できません'); setTimeout(() => setToast(null), 1500); return }
+        commitUpdate(next)
+      }
+      const applyResize = (edge: 'left' | 'right', delta: number) => {
+        const next = new Map<string, { start: string; end: string }>()
+        ids.forEach((id) => {
+          const base = baseDisplay.find((t) => t.id === id)
+          if (!base) return
+          if (edge === 'left') {
+            const s = new Date(base.start); s.setDate(s.getDate() + delta)
+            const f = new Date(base.end)
+            if (+s >= +f) s.setDate(f.getDate() - 1)
+            let sIso = s.toISOString().slice(0, 10)
+            sIso = snapWorkingDay(sIso, delta >= 0 ? 1 : -1)
+            next.set(id, { start: sIso, end: base.end })
+          } else {
+            const f = new Date(base.end); f.setDate(f.getDate() + delta)
+            const s = new Date(base.start)
+            if (+f <= +s) f.setDate(s.getDate() + 1)
+            let fIso = f.toISOString().slice(0, 10)
+            fIso = snapWorkingDay(fIso, delta >= 0 ? 1 : -1)
+            next.set(id, { start: base.start, end: fIso })
+          }
+        })
+        const bad = validateDeps(next)
+        if (bad.size) { setToast('依存関係の制約により適用できません'); setTimeout(() => setToast(null), 1500); return }
+        commitUpdate(next)
+      }
+      const commitUpdate = (next: Map<string, { start: string; end: string }>) => {
+        if (tasks.length > 0) {
+          const cmd: Command<TaskRow[]> = {
+            apply: (ts) => ts.map((row) => {
+              const id = String(row.taskId)
+              const u = next.get(id)
+              return u ? { ...row, start: u.start, finish: u.end } : row
+            }),
+            revert: (ts) => ts.map((row) => row),
+          }
+          onTasksChange(cmd)
+        } else if (demo) {
+          const upd = demo.map((d) => {
+            const u = next.get(d.id)
+            return u ? { ...d, start: u.start, end: u.end } : d
+          })
+          setDemo(upd)
+        }
+      }
+
+      // No modifier: move, Alt: right-edge resize, Alt+Shift: left-edge resize
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        if (e.altKey && e.shiftKey) applyResize('left', -step)
+        else if (e.altKey) applyResize('right', -step)
+        else applyMove(-step)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (e.altKey && e.shiftKey) applyResize('left', +step)
+        else if (e.altKey) applyResize('right', +step)
+        else applyMove(+step)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedIds, baseDisplay, tasks, demo])
 
   return (
     <div>
