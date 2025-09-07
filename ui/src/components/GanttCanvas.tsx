@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTripleHeader, dateToX, planBar, actualBar } from '../../../src/adapters'
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 
@@ -9,6 +9,8 @@ const cfg = { pxPerDay: 16 }
 export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
   const headerRef = useRef<HTMLCanvasElement | null>(null)
   const bodyRef = useRef<HTMLCanvasElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [containerW, setContainerW] = useState<number>(900)
 
   const displayTasks: GTask[] = useMemo(() => {
     if (!tasks.length) {
@@ -27,7 +29,7 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     }))
   }, [tasks])
 
-  const [chartStart, chartEnd] = useMemo(() => {
+  const [initStart, initEnd] = useMemo(() => {
     if (!tasks.length) return ['2023-12-30', '2024-01-20']
     const starts = tasks.map((t) => new Date(t.start))
     const finishes = tasks.map((t) => new Date(t.finish))
@@ -40,6 +42,27 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     f.setDate(f.getDate() + 2)
     return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
   }, [tasks])
+
+  const [chartStart, setChartStart] = useState<string>(initStart)
+  const [chartEnd, setChartEnd] = useState<string>(initEnd)
+
+  // Reset range when tasks change significantly
+  useEffect(() => {
+    setChartStart(initStart)
+    setChartEnd(initEnd)
+  }, [initStart, initEnd])
+
+  // Container width tracking (resize-aware)
+  useEffect(() => {
+    const update = () => {
+      const el = scrollRef.current
+      if (!el) return
+      setContainerW(el.clientWidth || 900)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
 
   useEffect(() => {
     const headerCanvas = headerRef.current
@@ -56,23 +79,29 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     }
     if (!hctx || !bctx) return
 
-    const width = 900
+    const start = new Date(chartStart)
+    const end = new Date(chartEnd)
+    const days = Math.max(1, Math.ceil((+end - +start) / 86400000))
+    const contentW = Math.max(containerW, days * cfg.pxPerDay)
     const headerHeight = 60
     const rowH = 28
     const bodyHeight = displayTasks.length * rowH + 20
 
-    headerCanvas.width = width
+    headerCanvas.width = contentW
     headerCanvas.height = headerHeight
-    bodyCanvas.width = width
+    bodyCanvas.width = contentW
     bodyCanvas.height = bodyHeight
+    // reflect layout width to allow horizontal scroll when needed
+    headerCanvas.style.width = `${contentW}px`
+    bodyCanvas.style.width = `${contentW}px`
 
     // ヘッダ描画
-    hctx.clearRect(0, 0, width, headerHeight)
+    hctx.clearRect(0, 0, contentW, headerHeight)
     const header = buildTripleHeader(chartStart, chartEnd, cfg)
     hctx.fillStyle = '#ffffff'
-    hctx.fillRect(0, 0, width, headerHeight)
+    hctx.fillRect(0, 0, contentW, headerHeight)
     hctx.strokeStyle = '#d0d0d0'
-    hctx.strokeRect(0, 0, width, headerHeight)
+    hctx.strokeRect(0, 0, contentW, headerHeight)
 
     hctx.fillStyle = '#333'
     hctx.font = '12px sans-serif'
@@ -89,7 +118,7 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     })
 
     // ボディ描画
-    bctx.clearRect(0, 0, width, bodyHeight)
+    bctx.clearRect(0, 0, contentW, bodyHeight)
 
     // 縦グリッド（日単位）
     const daySegs = (header as any)['day'] as Array<{ label: string; x: number; w: number }>
@@ -100,6 +129,18 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
       bctx.lineTo(s.x, bodyHeight)
       bctx.stroke()
     })
+    // 月境界の強調線
+    const ymSegs = (header as any)['yearMonth'] as Array<{ label: string; x: number; w: number }>
+    bctx.save()
+    bctx.strokeStyle = '#c8c8c8'
+    bctx.lineWidth = 1.5
+    ymSegs.forEach((s) => {
+      bctx.beginPath()
+      bctx.moveTo(s.x, 0)
+      bctx.lineTo(s.x, bodyHeight)
+      bctx.stroke()
+    })
+    bctx.restore()
 
     // バーと行区切り
     displayTasks.forEach((t, i) => {
@@ -116,10 +157,34 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
       bctx.strokeStyle = '#efefef'
       bctx.beginPath()
       bctx.moveTo(0, top + rowH)
-      bctx.lineTo(width, top + rowH)
+      bctx.lineTo(contentW, top + rowH)
       bctx.stroke()
     })
-  }, [displayTasks, chartStart, chartEnd])
+  }, [displayTasks, chartStart, chartEnd, containerW])
+
+  // Horizontal range expansion on scroll edges
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onScroll = () => {
+      const near = 80
+      const atLeft = el.scrollLeft < near
+      const atRight = el.scrollLeft + el.clientWidth > el.scrollWidth - near
+      if (atLeft) {
+        const d = new Date(chartStart)
+        d.setDate(d.getDate() - 14)
+        const iso = d.toISOString().slice(0, 10)
+        if (iso !== chartStart) setChartStart(iso)
+      } else if (atRight) {
+        const d = new Date(chartEnd)
+        d.setDate(d.getDate() + 14)
+        const iso = d.toISOString().slice(0, 10)
+        if (iso !== chartEnd) setChartEnd(iso)
+      }
+    }
+    el.addEventListener('scroll', onScroll)
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [chartStart, chartEnd])
 
   return (
     <div>
@@ -134,7 +199,7 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
           <span style={{ fontSize: 12, color: '#666' }}>計画（黒・下段）</span>
         </div>
       </div>
-      <div className="gantt-scroll">
+      <div className="gantt-scroll" ref={scrollRef}>
         <div className="gantt-header">
           <canvas ref={headerRef} className="gantt-canvas" style={{ height: 60 }} />
         </div>
