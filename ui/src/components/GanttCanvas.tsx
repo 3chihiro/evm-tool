@@ -5,7 +5,7 @@ import type { Command } from '../lib/history'
 import { hitTest, snapPx, type Hit, type DragKind } from '../lib/ganttHit'
 import { isWorkingDayISO, DefaultCalendar } from '../../../evm-mvp-sprint1/evm'
 
-type GTask = { id: string; name: string; start: string; end: string; progress: number }
+type GTask = { id: string; name: string; start: string; end: string; progress: number; aStart?: string; aEnd?: string }
 
 const cfg = { pxPerDay: 16 }
 
@@ -25,6 +25,7 @@ export default function GanttCanvas({
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [containerW, setContainerW] = useState<number>(900)
   const hitsRef = useRef<Hit[]>([])
+  const aHitsRef = useRef<Hit[]>([])
   const [hover, setHover] = useState<{ id: string; kind: DragKind } | null>(null)
   const dragRef = useRef<{
     kind: DragKind
@@ -33,8 +34,12 @@ export default function GanttCanvas({
     base: { start: string; end: string }
     multiIds: string[]
     cancelled?: boolean
+    bar: 'plan' | 'actual'
   } | null>(null)
   const [preview, setPreview] = useState<Map<string, { start: string; end: string }>>(new Map())
+  const [aPreview, setAPreview] = useState<Map<string, { aStart?: string; aEnd?: string; progress?: number }>>(new Map())
+  const [hoverBar, setHoverBar] = useState<'plan' | 'actual' | null>(null)
+  const [tip, setTip] = useState<{ type: 'plan' | 'actual'; id: string; x: number; y: number } | null>(null)
   const [violations, setViolations] = useState<Set<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
   const autoScrollReq = useRef<number | null>(null)
@@ -64,18 +69,27 @@ export default function GanttCanvas({
           start: t.start,
           end: t.finish,
           progress: Math.max(0, Math.min(1, (t.progressPercent ?? 0) / 100)),
+          aStart: t.actualStart,
+          aEnd: t.actualFinish,
         }))
       : demo ?? []
     return source
   }, [tasks, demo])
 
   const displayTasks: GTask[] = useMemo(() => {
-    if (!preview.size) return baseDisplay
     return baseDisplay.map((t) => {
       const p = preview.get(t.id)
-      return p ? { ...t, start: p.start, end: p.end } : t
+      const ap = aPreview.get(t.id)
+      return {
+        ...t,
+        start: p?.start ?? t.start,
+        end: p?.end ?? t.end,
+        aStart: ap?.aStart ?? t.aStart,
+        aEnd: ap?.aEnd ?? t.aEnd,
+        progress: ap?.progress ?? t.progress,
+      }
     })
-  }, [baseDisplay, preview])
+  }, [baseDisplay, preview, aPreview])
 
   const [initStart, initEnd] = useMemo(() => {
     const src = tasks.length ? tasks : (demo ?? [])
@@ -246,14 +260,36 @@ export default function GanttCanvas({
       const p = planBar(t as any, chartStart, cfg)
       return { id: t.id, x: p.x, y: i * rowH, w: p.w, row: i, yBar: i * rowH + 14, hBar: 10 }
     })
+    // 実績バーヒット（上段6px）
+    aHitsRef.current = displayTasks.map((t, i) => {
+      let ax: number, aw: number
+      if (t.aStart && t.aEnd) {
+        ax = dateToX(t.aStart, chartStart, cfg)
+        aw = Math.max(4, dateToX(t.aEnd, chartStart, cfg) - ax)
+      } else {
+        const p = planBar(t as any, chartStart, cfg)
+        aw = Math.max(4, Math.round(p.w * t.progress))
+        ax = p.x
+      }
+      return { id: t.id, x: ax, y: i * rowH, w: aw, row: i, yBar: i * rowH + 4, hBar: 6 }
+    })
 
     // バーと行区切り
     displayTasks.forEach((t, i) => {
       const top = i * rowH
       // 実績バー（上段）
-      const a = actualBar(t as any, chartStart, cfg)
+      let a = actualBar(t as any, chartStart, cfg)
+      if (t.aStart && t.aEnd) {
+        const ax = dateToX(t.aStart, chartStart, cfg)
+        const aw = Math.max(4, dateToX(t.aEnd, chartStart, cfg) - ax)
+        a = { x: ax, w: aw }
+      }
       bctx.fillStyle = '#59A14F'
       bctx.fillRect(a.x, top + 4, a.w, 6)
+      // 実績グリップ表示
+      bctx.fillStyle = '#2e7d32'
+      bctx.fillRect(a.x - 2, top + 4, 4, 6)
+      bctx.fillRect(a.x + a.w - 2, top + 4, 4, 6)
       // 計画バー（黒）
       const p = planBar(t as any, chartStart, cfg)
       const isSel = selectedIds.map(String).includes(t.id)
@@ -302,8 +338,19 @@ export default function GanttCanvas({
       const { mx, my } = toLocal(e)
       const dragging = dragRef.current
       if (!dragging) {
+        // 先に実績バーを優先して判定
+        const ha = hitTest(mx, my, aHitsRef.current)
+        if (ha) {
+          setHover(ha)
+          setHoverBar('actual')
+          setTip({ type: 'actual', id: ha.id, x: mx + 10, y: my + 10 })
+          cv.style.cursor = ha.kind.includes('resize') ? 'ew-resize' : 'grab'
+          return
+        }
         const h = hitTest(mx, my, hitsRef.current)
         setHover(h)
+        setHoverBar(h ? 'plan' : null)
+        setTip(h ? { type: 'plan', id: h.id, x: mx + 10, y: my + 10 } : null)
         cv.style.cursor = h ? (h.kind.includes('resize') ? 'ew-resize' : 'grab') : 'default'
         return
       }
@@ -331,52 +378,94 @@ export default function GanttCanvas({
 
         // 対象ID集合
         const ids = dragging.multiIds
-        const next = new Map(preview)
-        ids.forEach((id) => {
-          const base = baseDisplay.find((t) => t.id === id)!
-          if (dragging.kind === 'move') {
-            const s = new Date(base.start)
-            s.setDate(s.getDate() + deltaDays)
-            const f = new Date(base.end)
-            f.setDate(f.getDate() + deltaDays)
-            let sIso = s.toISOString().slice(0, 10)
-            let fIso = f.toISOString().slice(0, 10)
-            sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
-            fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
-            next.set(id, { start: sIso, end: fIso })
-          } else if (dragging.kind === 'resize-left') {
-            const s = new Date(base.start)
-            s.setDate(s.getDate() + deltaDays)
-            // 最小1日
-            const f = new Date(base.end)
-            if (+s >= +f) s.setDate(f.getDate() - 1)
-            let sIso = s.toISOString().slice(0, 10)
-            sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
-            next.set(id, { start: sIso, end: base.end })
-          } else if (dragging.kind === 'resize-right') {
-            const f = new Date(base.end)
-            f.setDate(f.getDate() + deltaDays)
-            const s = new Date(base.start)
-            if (+f <= +s) f.setDate(s.getDate() + 1)
-            let fIso = f.toISOString().slice(0, 10)
-            fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
-            next.set(id, { start: base.start, end: fIso })
-          }
-        })
-        const bad = validateDeps(next)
-        setViolations(bad)
-        setPreview(next)
+        if (dragging.bar === 'plan') {
+          const next = new Map(preview)
+          ids.forEach((id) => {
+            const base = baseDisplay.find((t) => t.id === id)!
+            if (dragging.kind === 'move') {
+              const s = new Date(base.start)
+              s.setDate(s.getDate() + deltaDays)
+              const f = new Date(base.end)
+              f.setDate(f.getDate() + deltaDays)
+              let sIso = s.toISOString().slice(0, 10)
+              let fIso = f.toISOString().slice(0, 10)
+              sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
+              fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
+              next.set(id, { start: sIso, end: fIso })
+            } else if (dragging.kind === 'resize-left') {
+              const s = new Date(base.start)
+              s.setDate(s.getDate() + deltaDays)
+              const f = new Date(base.end)
+              if (+s >= +f) s.setDate(f.getDate() - 1)
+              let sIso = s.toISOString().slice(0, 10)
+              sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
+              next.set(id, { start: sIso, end: base.end })
+            } else if (dragging.kind === 'resize-right') {
+              const f = new Date(base.end)
+              f.setDate(f.getDate() + deltaDays)
+              const s = new Date(base.start)
+              if (+f <= +s) f.setDate(s.getDate() + 1)
+              let fIso = f.toISOString().slice(0, 10)
+              fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
+              next.set(id, { start: base.start, end: fIso })
+            }
+          })
+          const bad = validateDeps(next)
+          setViolations(bad)
+          setPreview(next)
+        } else {
+          // actual bar editing -> update actualStart/Finish and progress
+          const nextA = new Map(aPreview)
+          ids.forEach((id) => {
+            const base = baseDisplay.find((t) => t.id === id)!
+            const pbar = planBar(base as any, chartStart, cfg)
+            const planDays = Math.max(1, Math.round(pbar.w / cfg.pxPerDay))
+            let s = new Date(base.aStart ?? base.start)
+            let f: Date
+            if (base.aStart && base.aEnd) {
+              f = new Date(base.aEnd)
+            } else {
+              f = new Date(base.start)
+              f.setDate(f.getDate() + Math.max(1, Math.round(planDays * base.progress)))
+            }
+            if (dragging.kind === 'move') {
+              s.setDate(s.getDate() + deltaDays)
+              f.setDate(f.getDate() + deltaDays)
+            } else if (dragging.kind === 'resize-left') {
+              s.setDate(s.getDate() + deltaDays)
+              if (+s >= +f) s.setDate(f.getDate() - 1)
+            } else if (dragging.kind === 'resize-right') {
+              f.setDate(f.getDate() + deltaDays)
+              if (+f <= +s) f.setDate(s.getDate() + 1)
+            }
+            let sIso = snapWorkingDay(s.toISOString().slice(0, 10), deltaDays >= 0 ? 1 : -1)
+            let fIso = snapWorkingDay(f.toISOString().slice(0, 10), deltaDays >= 0 ? 1 : -1)
+            const dur = Math.max(1, Math.round((new Date(fIso).getTime() - new Date(sIso).getTime()) / 86400000))
+            const prog = Math.min(1, Math.max(0, dur / planDays))
+            nextA.set(id, { aStart: sIso, aEnd: fIso, progress: prog })
+          })
+          setAPreview(nextA)
+        }
       })
     }
 
     const onPointerDown = (e: PointerEvent) => {
       const { mx, my } = toLocal(e)
-      const h = hitTest(mx, my, hitsRef.current)
+      // 実績バー優先
+      const ha = hitTest(mx, my, aHitsRef.current)
+      let h = ha
+      let bar: 'plan'|'actual' = 'actual'
+      if (!h) {
+        h = hitTest(mx, my, hitsRef.current)
+        bar = 'plan'
+      }
       if (!h) {
         // 何もない場所をクリック → 選択解除（修飾キーなし）
         if (!(e.metaKey || e.ctrlKey)) {
           onSelect([])
           setPreview(new Map())
+          setAPreview(new Map())
+          setTip(null)
         }
         return
       }
@@ -393,7 +482,7 @@ export default function GanttCanvas({
 
       const multiIds = newSelection.length ? newSelection.map(String) : [clickedId]
       const base = baseDisplay.find((t) => t.id === clickedId)!
-      dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds, cancelled: false }
+      dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds, cancelled: false, bar }
       cv.setPointerCapture(e.pointerId)
       cv.style.cursor = h.kind.includes('resize') ? 'ew-resize' : 'grabbing'
     }
@@ -409,8 +498,11 @@ export default function GanttCanvas({
 
       const next = new Map(preview)
       const updates = Array.from(next.entries()) // [id, {start,end}]
+      const nextA = new Map(aPreview)
+      const updatesA = Array.from(nextA.entries())
       setPreview(new Map())
-      if (!updates.length || drag.cancelled) return
+      setAPreview(new Map())
+      if ((drag.bar === 'plan' && (!updates.length || drag.cancelled)) || (drag.bar === 'actual' && (!updatesA.length || drag.cancelled))) return
       if (violations.size > 0) {
         setToast('依存関係の制約により適用できません')
         setTimeout(() => setToast(null), 1500)
@@ -418,7 +510,7 @@ export default function GanttCanvas({
         return
       }
 
-      if (tasks.length > 0) {
+      if (tasks.length > 0 && drag.bar === 'plan') {
         const cmd: Command<TaskRow[]> = {
           apply: (ts) => ts.map((row) => {
             const id = String(row.taskId)
@@ -437,11 +529,28 @@ export default function GanttCanvas({
           }),
         }
         onTasksChange(cmd)
-      } else if (demo) {
+      } else if (tasks.length > 0 && drag.bar === 'actual') {
+        const cmd: Command<TaskRow[]> = {
+          apply: (ts) => ts.map((row) => {
+            const id = String(row.taskId)
+            const u = nextA.get(id)
+            if (!u) return row
+            return { ...row, actualStart: u.aStart ?? row.actualStart, actualFinish: u.aEnd ?? row.actualFinish, progressPercent: Math.round(((u.progress ?? baseDisplay.find(t=>t.id===id)?.progress ?? 0) * 100)) }
+          }),
+          revert: (ts) => ts.map((row) => row),
+        }
+        onTasksChange(cmd)
+      } else if (demo && drag.bar === 'plan') {
         // CSV未読み込み時はローカルデモ配列を更新
         const upd = demo.map((d) => {
           const u = next.get(d.id)
           return u ? { ...d, start: u.start, end: u.end } : d
+        })
+        setDemo(upd)
+      } else if (demo && drag.bar === 'actual') {
+        const upd = demo.map((d) => {
+          const u = nextA.get(d.id)
+          return u ? { ...d, aStart: u.aStart, aEnd: u.aEnd, progress: u.progress ?? d.progress } : d
         })
         setDemo(upd)
       }
@@ -597,6 +706,37 @@ export default function GanttCanvas({
           <canvas ref={headerRef} className="gantt-canvas" style={{ height: 60 }} />
         </div>
         <canvas ref={bodyRef} className="gantt-canvas" style={{ height: '240px' }} />
+        {tip && (
+          <div style={{ position: 'absolute', left: Math.max(0, tip.x + 8), top: Math.max(0, tip.y + 8), background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, padding: '6px 8px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', pointerEvents: 'none', fontSize: 12 }}>
+            {(() => {
+              const t = displayTasks.find(d => d.id === tip.id)
+              if (!t) return null
+              const planDays = Math.max(1, Math.round((new Date(t.end).getTime() - new Date(t.start).getTime())/86400000))
+              if (tip.type === 'actual') {
+                const as = t.aStart ?? t.start
+                const af = t.aEnd ?? t.end
+                const aDays = Math.max(1, Math.round((new Date(af).getTime() - new Date(as).getTime())/86400000))
+                const pct = Math.round((t.progress ?? 0) * 100)
+                return (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>実績</div>
+                    <div>{as} 〜 {af}</div>
+                    <div>実工期: {aDays}日 / 進捗: {pct}%</div>
+                  </div>
+                )
+              } else {
+                const pct = Math.round((t.progress ?? 0) * 100)
+                return (
+                  <div>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>計画</div>
+                    <div>{t.start} 〜 {t.end}</div>
+                    <div>工期: {planDays}日 / 進捗: {pct}%</div>
+                  </div>
+                )
+              }
+            })()}
+          </div>
+        )}
       </div>
       {toast && (
         <div style={{ marginTop: 6, fontSize: 12, color: '#d32f2f' }}>{toast}</div>

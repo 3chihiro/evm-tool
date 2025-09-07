@@ -30,5 +30,6 @@ html, body, #root { height: 100%; margin: 0; font-family: system-ui, sans-serif;
 
 /* Gantt scrolling and sticky header */
 .gantt-scroll { max-height: 320px; overflow: auto; }
+.gantt-scroll { position: relative; }
 .gantt-header { position: sticky; top: 0; background: #fff; z-index: 1; border-bottom: 1px solid var(--border); }
 .gantt-canvas { display: block; width: 100%; }
