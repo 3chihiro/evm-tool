@@ -1,4 +1,4 @@
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('appBridge', {
   versions: {
@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld('appBridge', {
     chrome: process.versions.chrome,
     electron: process.versions.electron,
   },
+  exportPDF: async (options?: { landscape?: boolean }) => {
+    return ipcRenderer.invoke('export-pdf', options ?? {}) as Promise<string | null>
+  },
 });
-

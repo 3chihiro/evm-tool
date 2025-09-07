@@ -24,13 +24,23 @@ export default function App() {
 
   const projectName = useMemo(() => tasks[0]?.projectName ?? '', [tasks])
 
+  const onExportPDF = useCallback(async () => {
+    if (!('appBridge' in window) || typeof window.appBridge.exportPDF !== 'function') {
+      alert('Electron環境でのみPDF出力が利用できます。')
+      return
+    }
+    const saved = await window.appBridge.exportPDF({ landscape: false })
+    if (saved) alert(`PDFを保存しました: ${saved}`)
+  }, [])
+
   return (
     <div className="app-grid">
       <header className="header">
         <h1>EVM Tool UI Shell</h1>
         <div style={{ marginLeft: '16px', fontSize: 12, color: '#666' }}>{projectName && `（${projectName}）`}</div>
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="file" accept=".csv" onChange={onFileChange} />
+          <button onClick={onExportPDF}>PDF出力</button>
         </div>
       </header>
       <section className="gantt">

@@ -1,5 +1,6 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'node:path';
+import { promises as fs } from 'node:fs';
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -32,3 +33,22 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
+
+ipcMain.handle('export-pdf', async (_evt, opts: { landscape?: boolean } = {}) => {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  if (!win) return null
+  const { filePath, canceled } = await dialog.showSaveDialog(win, {
+    title: 'PDF出力',
+    defaultPath: join(app.getPath('desktop'), 'evm-report.pdf'),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (canceled || !filePath) return null
+  const pdf = await win.webContents.printToPDF({
+    landscape: !!opts.landscape,
+    printBackground: true,
+    margins: { marginType: 0 },
+    pageSize: 'A4',
+  } as any)
+  await fs.writeFile(filePath, pdf)
+  return filePath
+})
