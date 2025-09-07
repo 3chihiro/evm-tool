@@ -7,7 +7,8 @@ type GTask = { id: string; name: string; start: string; end: string; progress: n
 const cfg = { pxPerDay: 16 }
 
 export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const headerRef = useRef<HTMLCanvasElement | null>(null)
+  const bodyRef = useRef<HTMLCanvasElement | null>(null)
 
   const displayTasks: GTask[] = useMemo(() => {
     if (!tasks.length) {
@@ -41,62 +42,82 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
   }, [tasks])
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    let ctx: CanvasRenderingContext2D | null = null
+    const headerCanvas = headerRef.current
+    const bodyCanvas = bodyRef.current
+    if (!headerCanvas || !bodyCanvas) return
+
+    let hctx: CanvasRenderingContext2D | null = null
+    let bctx: CanvasRenderingContext2D | null = null
     try {
-      ctx = canvas.getContext('2d') as CanvasRenderingContext2D | null
+      hctx = headerCanvas.getContext('2d') as CanvasRenderingContext2D | null
+      bctx = bodyCanvas.getContext('2d') as CanvasRenderingContext2D | null
     } catch {
-      // jsdom では HTMLCanvasElement.getContext が未実装のため、描画をスキップ
       return
     }
-    if (!ctx) return
+    if (!hctx || !bctx) return
+
     const width = 900
     const headerHeight = 60
     const rowH = 28
-    const height = headerHeight + displayTasks.length * rowH + 20
-    canvas.width = width
-    canvas.height = height
+    const bodyHeight = displayTasks.length * rowH + 20
 
-    ctx.clearRect(0, 0, width, height)
+    headerCanvas.width = width
+    headerCanvas.height = headerHeight
+    bodyCanvas.width = width
+    bodyCanvas.height = bodyHeight
 
-    // 三段ヘッダ描画
+    // ヘッダ描画
+    hctx.clearRect(0, 0, width, headerHeight)
     const header = buildTripleHeader(chartStart, chartEnd, cfg)
-    ctx.fillStyle = '#fafafa'
-    ctx.fillRect(0, 0, width, headerHeight)
-    ctx.strokeStyle = '#ddd'
-    ctx.strokeRect(0, 0, width, headerHeight)
+    hctx.fillStyle = '#ffffff'
+    hctx.fillRect(0, 0, width, headerHeight)
+    hctx.strokeStyle = '#d0d0d0'
+    hctx.strokeRect(0, 0, width, headerHeight)
 
-    ctx.fillStyle = '#333'
-    ctx.font = '12px sans-serif'
+    hctx.fillStyle = '#333'
+    hctx.font = '12px sans-serif'
     let y = 14
-    ;['yearMonth', 'day', 'weekday'].forEach((level) => {
+    ;(['yearMonth', 'day', 'weekday'] as const).forEach((level, idx) => {
       const segments = (header as any)[level] as Array<{ label: string; x: number; w: number }>
       segments.forEach((s) => {
-        ctx.fillText(s.label, s.x + 4, y)
-        ctx.strokeStyle = '#eee'
-        ctx.strokeRect(s.x, (y - 12) + (level === 'yearMonth' ? 0 : level === 'day' ? 16 : 32), s.w, 16)
+        hctx.fillText(s.label, s.x + 4, y)
+        // グリッド枠
+        hctx.strokeStyle = idx === 0 ? '#cccccc' : '#e6e6e6'
+        hctx.strokeRect(s.x, (y - 12) + (level === 'yearMonth' ? 0 : level === 'day' ? 16 : 32), s.w, 16)
       })
       y += 16
     })
 
-    // 各行とバー描画
+    // ボディ描画
+    bctx.clearRect(0, 0, width, bodyHeight)
+
+    // 縦グリッド（日単位）
+    const daySegs = (header as any)['day'] as Array<{ label: string; x: number; w: number }>
+    bctx.strokeStyle = '#f5f5f5'
+    daySegs.forEach((s) => {
+      bctx.beginPath()
+      bctx.moveTo(s.x, 0)
+      bctx.lineTo(s.x, bodyHeight)
+      bctx.stroke()
+    })
+
+    // バーと行区切り
     displayTasks.forEach((t, i) => {
-      const top = headerHeight + i * rowH
+      const top = i * rowH
       // 実績バー（上段）
       const a = actualBar(t as any, chartStart, cfg)
-      ctx.fillStyle = '#59A14F' // actual: green
-      ctx.fillRect(a.x, top + 4, a.w, 6)
-      // 計画バー（黒・固定、下段）
+      bctx.fillStyle = '#59A14F'
+      bctx.fillRect(a.x, top + 4, a.w, 6)
+      // 計画バー（黒）
       const p = planBar(t as any, chartStart, cfg)
-      ctx.fillStyle = '#000000'
-      ctx.fillRect(p.x, top + 14, p.w, 10)
+      bctx.fillStyle = '#000000'
+      bctx.fillRect(p.x, top + 14, p.w, 10)
       // 行区切り線
-      ctx.strokeStyle = '#f0f0f0'
-      ctx.beginPath()
-      ctx.moveTo(0, top + rowH)
-      ctx.lineTo(width, top + rowH)
-      ctx.stroke()
+      bctx.strokeStyle = '#efefef'
+      bctx.beginPath()
+      bctx.moveTo(0, top + rowH)
+      bctx.lineTo(width, top + rowH)
+      bctx.stroke()
     })
   }, [displayTasks, chartStart, chartEnd])
 
@@ -113,7 +134,12 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
           <span style={{ fontSize: 12, color: '#666' }}>計画（黒・下段）</span>
         </div>
       </div>
-      <canvas ref={canvasRef} style={{ width: '100%', height: '240px' }} />
+      <div className="gantt-scroll">
+        <div className="gantt-header">
+          <canvas ref={headerRef} className="gantt-canvas" style={{ height: 60 }} />
+        </div>
+        <canvas ref={bodyRef} className="gantt-canvas" style={{ height: '240px' }} />
+      </div>
     </div>
   )
 }
