@@ -1,12 +1,7 @@
 import React from 'react'
+import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 
-const tasks = [
-  { id: 'T1', name: '企画', start: '2024-01-01', end: '2024-01-05', progress: 60 },
-  { id: 'T2', name: '設計', start: '2024-01-03', end: '2024-01-10', progress: 30 },
-  { id: 'T3', name: '実装', start: '2024-01-08', end: '2024-01-15', progress: 10 },
-]
-
-export default function TaskTable() {
+export default function TaskTable({ tasks }: { tasks: TaskRow[] }) {
   return (
     <div>
       <div className="panel-title">タスク一覧</div>
@@ -21,11 +16,11 @@ export default function TaskTable() {
         </thead>
         <tbody>
           {tasks.map((t) => (
-            <tr key={t.id}>
-              <td>{t.name}</td>
+            <tr key={t.taskId}>
+              <td>{t.taskName}</td>
               <td>{t.start}</td>
-              <td>{t.end}</td>
-              <td style={{ textAlign: 'right' }}>{t.progress}</td>
+              <td>{t.finish}</td>
+              <td style={{ textAlign: 'right' }}>{t.progressPercent ?? 0}</td>
             </tr>
           ))}
         </tbody>
@@ -33,4 +28,3 @@ export default function TaskTable() {
     </div>
   )
 }
-
