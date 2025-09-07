@@ -8,8 +8,40 @@ function iso(d?: string) { return d ?? '' }
 export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: { tasks: TaskRow[]; selectedIds: (string|number)[]; onTasksChange: (cmd: Command<TaskRow[]>) => void }) {
   const current = useMemo(() => tasks.find(t => String(t.taskId) === String(selectedIds[0])), [tasks, selectedIds])
   const [mode, setMode] = useState<'manual'|'auto'>('manual')
+  const [depMode, setDepMode] = useState<'pred'|'succ'>('pred')
   // Hooks must not be conditional: compute autoProgress safely even when no current
   const autoProgress = useMemo(() => current ? calculateAutoProgress(current) : 0, [current])
+
+  // NOTE: Hooks must be declared unconditionally (before any early return)
+  // 依存グラフ（後続マップ）を構築
+  const makeSuccMap = React.useCallback((ts: TaskRow[]) => {
+    const map = new Map<string, string[]>()
+    ts.forEach((row) => {
+      const sid = String(row.taskId)
+      const preds = row.predIds ?? []
+      preds.forEach((pid) => {
+        const k = String(pid)
+        const arr = map.get(k) ?? []
+        arr.push(sid)
+        map.set(k, arr)
+      })
+    })
+    return map
+  }, [])
+
+  const hasPath = React.useCallback((succ: Map<string,string[]>, from: string, to: string): boolean => {
+    if (from === to) return true
+    const seen = new Set<string>([from])
+    const q: string[] = [from]
+    while (q.length) {
+      const cur = q.shift() as string
+      for (const nx of (succ.get(cur) ?? [])) {
+        if (nx === to) return true
+        if (!seen.has(nx)) { seen.add(nx); q.push(nx) }
+      }
+    }
+    return false
+  }, [])
 
   if (!current) return <div className="panel-title">工程情報（タスクを選択してください）</div>
 
@@ -24,9 +56,54 @@ export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: 
     onTasksChange(cmd)
   }
 
+
+  const applySuccTargets = (targetIds: number[]) => {
+    const curId = current.taskId
+    const succ = makeSuccMap(tasks)
+    let warned = false
+    const cmd: Command<TaskRow[]> = {
+      apply: (ts) => ts.map(row => {
+        if (row.taskId === curId) return row
+        // 選択済み: curId を predIds に追加、未選択: predIds から curId を除去
+        if (targetIds.includes(row.taskId)) {
+          // 追加前に循環チェック（curId -> row.taskId の辺を追加）
+          if (hasPath(succ, String(row.taskId), String(curId))) {
+            if (!warned) { try { alert('循環依存は登録できません（後続の一部を除外しました）') } catch {} ; warned = true }
+            return row
+          }
+          const set = new Set(row.predIds ?? [])
+          set.add(curId)
+          return { ...row, predIds: Array.from(set) }
+        } else if (row.predIds?.includes(curId)) {
+          const arr = row.predIds.filter((x) => x !== curId)
+          return { ...row, predIds: arr }
+        }
+        return row
+      }),
+      revert: (ts) => ts,
+    }
+    onTasksChange(cmd)
+  }
+
   const onDepsChange = (s: string) => {
     const arr = s.split(',').map(x => Number(x.trim())).filter(n => Number.isFinite(n))
-    apply({ predIds: arr.length ? arr : undefined })
+    if (depMode === 'pred') {
+      // 循環チェック: 追加しようとしている pred が current から到達可能なら循環
+      const succ = makeSuccMap(tasks)
+      const curId = String(current.taskId)
+      const filtered: number[] = []
+      let warned = false
+      for (const p of arr) {
+        if (hasPath(succ, curId, String(p))) {
+          if (!warned) { try { alert('循環依存は登録できません（先行の一部を除外しました）') } catch {} ; warned = true }
+          continue
+        }
+        filtered.push(p)
+      }
+      apply({ predIds: filtered })
+    } else {
+      applySuccTargets(arr)
+    }
   }
 
   return (
@@ -35,13 +112,27 @@ export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: 
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', gap: 8, alignItems: 'center' }}>
         <label>工程名</label>
         <input value={current.taskName} onChange={e => apply({ taskName: e.target.value })} />
-        <label>依存（選択）</label>
+        <label>依存（方向を選択）</label>
         <div>
+          <div style={{ marginBottom: 6, fontSize: 12, color: '#666' }}>
+            <label style={{ marginRight: 12 }}>
+              <input type="radio" name="depdir" checked={depMode==='pred'} onChange={() => setDepMode('pred')} />
+              {' '}先行（このタスクが待つ）
+            </label>
+            <label>
+              <input type="radio" name="depdir" checked={depMode==='succ'} onChange={() => setDepMode('succ')} />
+              {' '}後続（このタスクの後に並べる）
+            </label>
+          </div>
           <select multiple size={6}
-            value={(current.predIds?.map(String) ?? [])}
+            value={(depMode==='pred'
+              ? (current.predIds?.map(String) ?? [])
+              : tasks.filter(t => t.taskId !== current.taskId && (t.predIds ?? []).includes(current.taskId)).map(t => String(t.taskId))
+            )}
             onChange={(e) => {
               const opts = Array.from(e.currentTarget.selectedOptions).map(o => Number(o.value)).filter(n => Number.isFinite(n))
-              apply({ predIds: opts })
+              if (depMode==='pred') apply({ predIds: opts })
+              else applySuccTargets(opts)
             }}
             style={{ minWidth: 200 }}
           >
@@ -49,6 +140,14 @@ export default function TaskDetailsPanel({ tasks, selectedIds, onTasksChange }: 
               <option key={t.taskId} value={t.taskId}>{t.taskId}: {t.taskName}</option>
             ))}
           </select>
+          <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>
+            現在の依存関係: {current.taskName} は
+            {' '}
+            {(current.predIds && current.predIds.length)
+              ? current.predIds.map(id => tasks.find(t => t.taskId === id)?.taskName || String(id)).join(', ')
+              : '（なし）'}
+            {' '}の完了後に開始します。
+          </div>
           <div style={{ marginTop: 4 }}>
             <button className="btn" onClick={() => apply({ predIds: [] })}>クリア</button>
           </div>

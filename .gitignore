@@ -5,3 +5,5 @@ ui/dist/
 *.log
 minimal.js
 printenv.js
+tests/tmp_*.csv
+* 2.ts

@@ -46,6 +46,16 @@ export default function GanttCanvas({
   const [toast, setToast] = useState<string | null>(null)
   const autoScrollReq = useRef<number | null>(null)
   const autoScrollDir = useRef<0 | -1 | 1>(0)
+  // 依存連動トグル（デフォルトON）
+  const [linkDeps, setLinkDeps] = useState<boolean>(() => {
+    try { const v = localStorage.getItem('evm_link_deps'); return v == null ? true : v === '1' } catch { return true }
+  })
+  useEffect(() => { try { localStorage.setItem('evm_link_deps', linkDeps ? '1' : '0') } catch {} }, [linkDeps])
+  // 実績も連動（デフォルトON）
+  const [linkActual, setLinkActual] = useState<boolean>(() => {
+    try { const v = localStorage.getItem('evm_link_actual'); return v == null ? true : v === '1' } catch { return true }
+  })
+  useEffect(() => { try { localStorage.setItem('evm_link_actual', linkActual ? '1' : '0') } catch {} }, [linkActual])
 
   // ローカルデモ用タスク（CSV未読み込み時の編集保持）
   const [demo, setDemo] = useState<GTask[] | null>(null)
@@ -116,6 +126,60 @@ export default function GanttCanvas({
     }
   }, [tasks, demo])
 
+  // 依存関係（predIds）から「後続タスク」マップを構築（id -> 直接の後続タスクID配列）
+  const succMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    tasks.forEach((row) => {
+      const sid = String(row.taskId)
+      const preds = row.predIds ?? []
+      preds.forEach((pid) => {
+        const key = String(pid)
+        const arr = map.get(key) ?? []
+        arr.push(sid)
+        map.set(key, arr)
+      })
+    })
+    return map
+  }, [tasks])
+
+  // 先行（pred）マップ: id -> 直接の先行ID配列
+  const predMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    tasks.forEach((row) => {
+      const sid = String(row.taskId)
+      const preds = row.predIds ?? []
+      map.set(sid, preds.map((p) => String(p)))
+    })
+    return map
+  }, [tasks])
+
+  // 与えられたID集合に対し、全ての後続タスク（推移閉包）を含めた集合を返す
+  const expandWithDependents = React.useCallback((ids: string[]): string[] => {
+    const res = new Set<string>(ids)
+    const stack = [...ids]
+    while (stack.length) {
+      const cur = stack.pop() as string
+      const children = succMap.get(cur) ?? []
+      for (const c of children) {
+        if (!res.has(c)) { res.add(c); stack.push(c) }
+      }
+    }
+    return Array.from(res)
+  }, [succMap])
+
+  // 閉包選択ヘルパ: 後続/先行 いずれか方向の推移閉包を返す
+  const getSuccClosure = React.useCallback((ids: string[]): string[] => expandWithDependents(ids), [expandWithDependents])
+  const getPredClosure = React.useCallback((ids: string[]): string[] => {
+    const res = new Set<string>(ids)
+    const stack = [...ids]
+    while (stack.length) {
+      const cur = stack.pop() as string
+      const preds = predMap.get(cur) ?? []
+      for (const p of preds) { if (!res.has(p)) { res.add(p); stack.push(p) } }
+    }
+    return Array.from(res)
+  }, [predMap])
+
   const [chartStart, setChartStart] = useState<string>(initStart)
   const [chartEnd, setChartEnd] = useState<string>(initEnd)
 
@@ -148,6 +212,16 @@ export default function GanttCanvas({
     return d.toISOString().slice(0, 10)
   }
 
+  const addDaysISO = (iso: string, delta: number, snapDir: -1 | 1): string => {
+    const d = new Date(iso)
+    d.setDate(d.getDate() + delta)
+    return snapWorkingDay(d.toISOString().slice(0,10), snapDir)
+  }
+
+  const diffDaysISO = (a: string, b: string): number => {
+    return Math.round((new Date(a).getTime() - new Date(b).getTime()) / 86400000)
+  }
+
   // Validate dependencies for preview
   const validateDeps = (next: Map<string, { start: string; end: string }>): Set<string> => {
     const idToTask = new Map<string, TaskRow>(tasks.map((t) => [String(t.taskId), t]))
@@ -158,7 +232,8 @@ export default function GanttCanvas({
       for (const pid of row.predIds) {
         const p = idToTask.get(String(pid))
         if (!p) continue
-        const pf = p.finish
+        // 同時移動プレビュー中のときは、先行タスクの新しい finish も考慮する
+        const pf = next.get(String(pid))?.end ?? p.finish
         if (u.start < pf) {
           bad.add(id)
           break
@@ -166,6 +241,77 @@ export default function GanttCanvas({
       }
     })
     return bad
+  }
+
+  // 依存関係(FS)を満たすように、提案された next マップを下流へ伝播して補正する
+  const enforceFsConstraints = (nextIn: Map<string, { start: string; end: string }>, moveDir: -1 | 1): Map<string, { start: string; end: string }> => {
+    const idToTask = new Map<string, TaskRow>(tasks.map((t) => [String(t.taskId), t]))
+    const next = new Map(nextIn) // 作業用コピー（破壊しない）
+
+    // 期間（日数）を保持するため、各 moved タスクについて元の差分をメモ
+    const durDays = new Map<string, number>()
+    next.forEach((u, id) => {
+      const s = new Date(u.start)
+      const f = new Date(u.end)
+      durDays.set(id, Math.max(1, Math.round((+f - +s) / 86400000)))
+    })
+
+    // まず、移動対象自身が先行の終了より前に行かないようクランプ
+    Array.from(next.keys()).forEach((id) => {
+      const row = idToTask.get(id)
+      if (!row) return
+      const preds = row.predIds ?? []
+      if (!preds.length) return
+      const current = next.get(id) ?? { start: row.start, end: row.finish }
+      let required = ''
+      for (const pid of preds) {
+        const pend = next.get(String(pid))?.end ?? idToTask.get(String(pid))?.finish
+        if (!pend) continue
+        if (!required || new Date(pend) > new Date(required)) required = pend
+      }
+      if (required && new Date(current.start) < new Date(required)) {
+        const sIso = snapWorkingDay(required, 1)
+        const dur = durDays.get(id) ?? Math.max(1, Math.round(((new Date(current.end).getTime()) - (new Date(current.start).getTime())) / 86400000))
+        const e = new Date(sIso); e.setDate(e.getDate() + dur)
+        const eIso = snapWorkingDay(e.toISOString().slice(0, 10), moveDir)
+        next.set(id, { start: sIso, end: eIso })
+      }
+    })
+
+    // moved（next に含まれる）ノードから下流へ辿る順序で調整
+    const queue: string[] = Array.from(next.keys())
+    const seen = new Set<string>()
+    while (queue.length) {
+      const cur = queue.shift() as string
+      if (seen.has(cur)) continue
+      seen.add(cur)
+      const succs = succMap.get(cur) ?? []
+      for (const sid of succs) {
+        const row = idToTask.get(sid)
+        if (!row) continue
+        // 後続の新開始は、すべての先行の終了（更新後があればそれ）以上にする
+        const preds = row.predIds ?? []
+        const current = next.get(sid) ?? { start: row.start, end: row.finish }
+        let minStart = current.start
+        let required = ''
+        for (const pid of preds) {
+          const pend = next.get(String(pid))?.end ?? idToTask.get(String(pid))?.finish
+          if (!pend) continue
+          if (!required || new Date(pend) > new Date(required)) required = pend
+        }
+        if (required && new Date(minStart) < new Date(required)) {
+          // クランプ: 開始=required（非稼働日の場合は次の稼働日にスナップ）
+          const sIso = snapWorkingDay(required, 1)
+          const dur = durDays.get(sid) ?? Math.max(1, Math.round(((new Date(current.end).getTime()) - (new Date(current.start).getTime())) / 86400000))
+          const e = new Date(sIso); e.setDate(e.getDate() + dur)
+          const eIso = snapWorkingDay(e.toISOString().slice(0, 10), moveDir)
+          next.set(sid, { start: sIso, end: eIso })
+          // この変更がさらに下流に影響するため、後続をキューに追加
+          queue.push(sid)
+        }
+      }
+    }
+    return next
   }
 
   useEffect(() => {
@@ -288,6 +434,14 @@ export default function GanttCanvas({
     bctx.strokeStyle = '#666'
     bctx.lineWidth = 1
     const sel = new Set(selectedIds.map(String))
+    const hoverId = hover?.id
+    const hoverNeighbors = new Set<string>()
+    if (hoverId) {
+      const preds = predMap.get(hoverId) ?? []
+      preds.forEach((p) => hoverNeighbors.add(String(p)))
+      const succs = succMap.get(hoverId) ?? []
+      succs.forEach((s) => hoverNeighbors.add(String(s)))
+    }
     displayTasks.forEach((t) => {
       const preds = predMap.get(t.id)
       if (!preds) return
@@ -304,8 +458,9 @@ export default function GanttCanvas({
         // violation if successor starts before predecessor end (by date)
         const isBad = new Date(t.start) < new Date(pTask.end)
         const isSel = sel.has(t.id) || sel.has(String(pid))
-        bctx.strokeStyle = isBad ? '#d32f2f' : (isSel ? '#1976d2' : '#666')
-        bctx.lineWidth = isSel ? 2 : 1
+        const isHoverRel = !!hoverId && (hoverId === t.id || hoverId === String(pid) || hoverNeighbors.has(t.id) || hoverNeighbors.has(String(pid)))
+        bctx.strokeStyle = isBad ? '#d32f2f' : (isSel ? '#1976d2' : (isHoverRel ? '#999' : '#666'))
+        bctx.lineWidth = isSel ? 2 : (isHoverRel ? 1.5 : 1)
         // polyline: from -> (toX-10, fromY) -> (toX-10, toY) -> (toX, toY)
         bctx.beginPath()
         bctx.moveTo(fromX, fromY)
@@ -422,7 +577,7 @@ export default function GanttCanvas({
         // 対象ID集合
         const ids = dragging.multiIds
         if (dragging.bar === 'plan') {
-          const next = new Map(preview)
+          let next = new Map(preview)
           ids.forEach((id) => {
             const base = baseDisplay.find((t) => t.id === id)!
             if (dragging.kind === 'move') {
@@ -453,9 +608,29 @@ export default function GanttCanvas({
               next.set(id, { start: base.start, end: fIso })
             }
           })
-          const bad = validateDeps(next)
+          // 先行→後続への制約を満たすよう補正（移動/左右リサイズ時）
+          if (dragging.kind === 'move' || dragging.kind === 'resize-right' || dragging.kind === 'resize-left') {
+            next = enforceFsConstraints(next, deltaDays >= 0 ? 1 : -1)
+          }
+          const bad = linkDeps ? validateDeps(next) : validateDeps(next)
           setViolations(bad)
           setPreview(next)
+          // 実績連動: 計画の変化量に応じて aStart/aEnd をプレビュー更新
+          if (linkActual) {
+            const nextA = new Map(aPreview)
+            next.forEach((u, id) => {
+              const base = baseDisplay.find(t => t.id === id)
+              if (!base) return
+              const delta = diffDaysISO(u.start, base.start)
+              if (delta === 0) return
+              if (base.aStart || base.aEnd) {
+                const sIso = base.aStart ? addDaysISO(base.aStart, delta, delta >= 0 ? 1 : -1) : undefined
+                const eIso = base.aEnd ? addDaysISO(base.aEnd!, delta, delta >= 0 ? 1 : -1) : undefined
+                nextA.set(id, { aStart: sIso, aEnd: eIso, progress: base.progress })
+              }
+            })
+            setAPreview(nextA)
+          }
         } else {
           // actual bar editing -> update actualStart/Finish and progress
           const nextA = new Map(aPreview)
@@ -523,7 +698,11 @@ export default function GanttCanvas({
       }
       onSelect(newSelection)
 
-      const multiIds = newSelection.length ? newSelection.map(String) : [clickedId]
+      let multiIds = newSelection.length ? newSelection.map(String) : [clickedId]
+      // 計画バーの移動/右リサイズ時は、後続タスクも自動的に連動（トグルON時）
+      if (linkDeps && bar === 'plan' && (h.kind === 'move' || h.kind === 'resize-right')) {
+        multiIds = expandWithDependents(multiIds)
+      }
       const base = baseDisplay.find((t) => t.id === clickedId)!
       dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds, cancelled: false, bar }
       cv.setPointerCapture(e.pointerId)
@@ -539,27 +718,53 @@ export default function GanttCanvas({
       if (autoScrollReq.current != null) { cancelAnimationFrame(autoScrollReq.current); autoScrollReq.current = null }
       if (!drag) return
 
-      const next = new Map(preview)
+      let next = new Map(preview)
       const updates = Array.from(next.entries()) // [id, {start,end}]
       const nextA = new Map(aPreview)
       const updatesA = Array.from(nextA.entries())
-      setPreview(new Map())
-      setAPreview(new Map())
-      if ((drag.bar === 'plan' && (!updates.length || drag.cancelled)) || (drag.bar === 'actual' && (!updatesA.length || drag.cancelled))) return
-      if (violations.size > 0) {
-        setToast('依存関係の制約により適用できません')
-        setTimeout(() => setToast(null), 1500)
+      // Do not clear previews until we decide to commit/reject
+      if ((drag.bar === 'plan' && (!updates.length || drag.cancelled)) || (drag.bar === 'actual' && (!updatesA.length || drag.cancelled))) {
+        setPreview(new Map())
+        setAPreview(new Map())
         setViolations(new Set())
         return
       }
 
       if (tasks.length > 0 && drag.bar === 'plan') {
+        // Recompute constraints at drop-time to avoid race with state
+        if (linkDeps && drag.kind === 'move') {
+          const moved = next.get(drag.id)
+          const baseStart = new Date(drag.base.start)
+          const newStart = new Date(moved?.start ?? drag.base.start)
+          const moveDir: -1 | 1 = newStart.getTime() - baseStart.getTime() >= 0 ? 1 : -1
+          next = enforceFsConstraints(next, moveDir)
+        }
+        const badUp = validateDeps(next)
+        if (badUp.size > 0) {
+          setToast('依存関係の制約により適用できません')
+          setTimeout(() => setToast(null), 1500)
+          setViolations(new Set())
+          setPreview(new Map())
+          setAPreview(new Map())
+          return
+        }
+        const linkA = linkActual
+        const nextActual = new Map(aPreview)
         const cmd: Command<TaskRow[]> = {
           apply: (ts) => ts.map((row) => {
             const id = String(row.taskId)
             const u = next.get(id)
-            if (!u) return row
-            return { ...row, start: u.start, finish: u.end }
+            let updated: TaskRow = row
+            if (u) {
+              updated = { ...updated, start: u.start, finish: u.end }
+            }
+            if (linkA) {
+              const a = nextActual.get(id)
+              if (a && (a.aStart || a.aEnd)) {
+                updated = { ...updated, actualStart: a.aStart ?? updated.actualStart, actualFinish: a.aEnd ?? updated.actualFinish }
+              }
+            }
+            return updated
           }),
           revert: (ts) => ts.map((row) => {
             const id = String(row.taskId)
@@ -572,6 +777,9 @@ export default function GanttCanvas({
           }),
         }
         onTasksChange(cmd)
+        setPreview(new Map())
+        setAPreview(new Map())
+        setViolations(new Set())
       } else if (tasks.length > 0 && drag.bar === 'actual') {
         const cmd: Command<TaskRow[]> = {
           apply: (ts) => ts.map((row) => {
@@ -583,6 +791,9 @@ export default function GanttCanvas({
           revert: (ts) => ts.map((row) => row),
         }
         onTasksChange(cmd)
+        setPreview(new Map())
+        setAPreview(new Map())
+        setViolations(new Set())
       } else if (demo && drag.bar === 'plan') {
         // CSV未読み込み時はローカルデモ配列を更新
         const upd = demo.map((d) => {
@@ -590,12 +801,18 @@ export default function GanttCanvas({
           return u ? { ...d, start: u.start, end: u.end } : d
         })
         setDemo(upd)
+        setPreview(new Map())
+        setAPreview(new Map())
+        setViolations(new Set())
       } else if (demo && drag.bar === 'actual') {
         const upd = demo.map((d) => {
           const u = nextA.get(d.id)
           return u ? { ...d, aStart: u.aStart, aEnd: u.aEnd, progress: u.progress ?? d.progress } : d
         })
         setDemo(upd)
+        setPreview(new Map())
+        setAPreview(new Map())
+        setViolations(new Set())
       }
     }
 
@@ -650,10 +867,12 @@ export default function GanttCanvas({
       if (!selectedIds.length) return
       const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase()
       if (tag === 'input' || tag === 'textarea' || (e.target as HTMLElement)?.isContentEditable) return
-      const ids = selectedIds.map(String)
+      // 矢印キーでの移動時も、後続タスク連動を適用（トグルON時、Resizeは除外）
+      const baseIds = selectedIds.map(String)
+      const ids = linkDeps ? expandWithDependents(baseIds) : baseIds
       const step = e.shiftKey ? 5 : 1
       const applyMove = (delta: number) => {
-        const next = new Map<string, { start: string; end: string }>()
+        let next = new Map<string, { start: string; end: string }>()
         ids.forEach((id) => {
           const base = baseDisplay.find((t) => t.id === id)
           if (!base) return
@@ -665,12 +884,30 @@ export default function GanttCanvas({
           fIso = snapWorkingDay(fIso, delta >= 0 ? 1 : -1)
           next.set(id, { start: sIso, end: fIso })
         })
+        // 先行→後続制約を満たすよう補正（トグルON時のみ）
+        if (linkDeps) next = enforceFsConstraints(next, delta >= 0 ? 1 : -1)
         const bad = validateDeps(next)
         if (bad.size) { setToast('依存関係の制約により適用できません'); setTimeout(() => setToast(null), 1500); return }
-        commitUpdate(next)
+        // 実績連動: 実績を同じシフト分動かす
+        let nextA: Map<string, { aStart?: string; aEnd?: string }>|null = null
+        if (linkActual) {
+          nextA = new Map()
+          next.forEach((u, id) => {
+            const base = baseDisplay.find(t => t.id === id)
+            if (!base) return
+            const shift = diffDaysISO(u.start, base.start)
+            if (shift === 0) return
+            if (base.aStart || base.aEnd) {
+              const sIso = base.aStart ? addDaysISO(base.aStart, shift, shift >= 0 ? 1 : -1) : undefined
+              const eIso = base.aEnd ? addDaysISO(base.aEnd!, shift, shift >= 0 ? 1 : -1) : undefined
+              nextA!.set(id, { aStart: sIso, aEnd: eIso })
+            }
+          })
+        }
+        commitUpdate(next, nextA)
       }
       const applyResize = (edge: 'left' | 'right', delta: number) => {
-        const next = new Map<string, { start: string; end: string }>()
+        let next = new Map<string, { start: string; end: string }>()
         ids.forEach((id) => {
           const base = baseDisplay.find((t) => t.id === id)
           if (!base) return
@@ -690,17 +927,38 @@ export default function GanttCanvas({
             next.set(id, { start: base.start, end: fIso })
           }
         })
+        // リサイズ時もFS制約に合わせてクランプ（自身/後続）（トグルON時のみ）
+        if (linkDeps) next = enforceFsConstraints(next, delta >= 0 ? 1 : -1)
         const bad = validateDeps(next)
         if (bad.size) { setToast('依存関係の制約により適用できません'); setTimeout(() => setToast(null), 1500); return }
-        commitUpdate(next)
+        let nextA: Map<string, { aStart?: string; aEnd?: string }>|null = null
+        if (linkActual) {
+          nextA = new Map()
+          next.forEach((u, id) => {
+            const base = baseDisplay.find(t => t.id === id)
+            if (!base) return
+            const shift = diffDaysISO(u.start, base.start)
+            if (shift === 0) return
+            if (base.aStart || base.aEnd) {
+              const sIso = base.aStart ? addDaysISO(base.aStart, shift, shift >= 0 ? 1 : -1) : undefined
+              const eIso = base.aEnd ? addDaysISO(base.aEnd!, shift, shift >= 0 ? 1 : -1) : undefined
+              nextA!.set(id, { aStart: sIso, aEnd: eIso })
+            }
+          })
+        }
+        commitUpdate(next, nextA)
       }
-      const commitUpdate = (next: Map<string, { start: string; end: string }>) => {
+      const commitUpdate = (next: Map<string, { start: string; end: string }>, nextA?: Map<string, { aStart?: string; aEnd?: string }> | null) => {
         if (tasks.length > 0) {
           const cmd: Command<TaskRow[]> = {
             apply: (ts) => ts.map((row) => {
               const id = String(row.taskId)
               const u = next.get(id)
-              return u ? { ...row, start: u.start, finish: u.end } : row
+              let updated: TaskRow = row
+              if (u) updated = { ...updated, start: u.start, finish: u.end }
+              const a = nextA?.get(id)
+              if (a && (a.aStart || a.aEnd)) updated = { ...updated, actualStart: a.aStart ?? updated.actualStart, actualFinish: a.aEnd ?? updated.actualFinish }
+              return updated
             }),
             revert: (ts) => ts.map((row) => row),
           }
@@ -729,7 +987,7 @@ export default function GanttCanvas({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedIds, baseDisplay, tasks, demo])
+  }, [selectedIds, baseDisplay, tasks, demo, expandWithDependents])
 
   return (
     <div>
@@ -742,6 +1000,13 @@ export default function GanttCanvas({
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ display: 'inline-block', width: 18, height: 10, background: '#000' }} />
           <span style={{ fontSize: 12, color: '#666' }}>計画（黒・下段）</span>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginLeft: 'auto' }}>
+          <label style={{ fontSize: 12, color: '#444', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={linkDeps} onChange={(e) => setLinkDeps(e.target.checked)} /> 依存連動
+          </label>
+          <button className="btn" style={{ fontSize: 12 }} onClick={() => onSelect(getPredClosure(selectedIds.map(String)))}>先行選択</button>
+          <button className="btn" style={{ fontSize: 12 }} onClick={() => onSelect(getSuccClosure(selectedIds.map(String)))}>後続選択</button>
         </div>
       </div>
       <div className="gantt-scroll" ref={scrollRef}>
@@ -784,6 +1049,11 @@ export default function GanttCanvas({
       {toast && (
         <div style={{ marginTop: 6, fontSize: 12, color: '#d32f2f' }}>{toast}</div>
       )}
+      <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center', fontSize: 12, color: '#444' }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="checkbox" checked={linkActual} onChange={(e) => setLinkActual(e.target.checked)} /> 実績連動
+        </label>
+      </div>
     </div>
   )
 }
