@@ -6,6 +6,7 @@ import EvmCard from './components/EvmCard'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
 import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
 import { createUseHistory, type Command } from './lib/history'
+import type { Calendar } from '../../evm-mvp-sprint1/evm'
 
 const useTasksHistory = createUseHistory<TaskRow[]>([])
 
@@ -14,6 +15,14 @@ export default function App() {
   const tasks = hist.present
   const [errors, setErrors] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
+  const [calendar, setCalendar] = useState<Calendar>(() => {
+    // restore from localStorage
+    try {
+      const saved = localStorage.getItem('evm_calendar_holidays')
+      const holidays = saved ? JSON.parse(saved) as string[] : []
+      return { holidays }
+    } catch { return { holidays: [] } }
+  })
 
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -45,6 +54,23 @@ export default function App() {
     const name = (projectName || 'project') + '.csv'
     triggerDownloadCsv(name, text)
   }, [tasks, projectName])
+  const onAddHoliday = useCallback((iso: string) => {
+    if (!iso) return
+    setCalendar((c) => {
+      const set = new Set(c.holidays ?? [])
+      set.add(iso)
+      const next = { holidays: Array.from(set).sort() }
+      localStorage.setItem('evm_calendar_holidays', JSON.stringify(next.holidays))
+      return next
+    })
+  }, [])
+  const onRemoveHoliday = useCallback((iso: string) => {
+    setCalendar((c) => {
+      const next = { holidays: (c.holidays ?? []).filter((d) => d !== iso) }
+      localStorage.setItem('evm_calendar_holidays', JSON.stringify(next.holidays))
+      return next
+    })
+  }, [])
 
   return (
     <div className="app-grid">
@@ -63,6 +89,7 @@ export default function App() {
           onTasksChange={(cmd: Command<TaskRow[]>) => hist.run(cmd)}
           selectedIds={selectedIds}
           onSelect={setSelectedIds}
+          calendar={calendar}
         />
       </section>
       <section className="tasks">
@@ -71,7 +98,7 @@ export default function App() {
         <TaskTable tasks={tasks} selectedIds={selectedIds} onSelect={setSelectedIds} />
       </section>
       <aside className="evm">
-        <EvmCard tasks={tasks} />
+        <EvmCard tasks={tasks} calendar={calendar} />
         {errors.length > 0 && (
           <div style={{ marginTop: 8 }}>
             <div className="panel-title">インポートエラー</div>
@@ -82,6 +109,20 @@ export default function App() {
             </ul>
           </div>
         )}
+        <div style={{ marginTop: 12 }}>
+          <div className="panel-title">祝日設定</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="date" onChange={(e) => onAddHoliday(e.target.value)} />
+            <button className="btn" onClick={() => { localStorage.removeItem('evm_calendar_holidays'); setCalendar({ holidays: [] }) }}>クリア</button>
+          </div>
+          <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {(calendar.holidays ?? []).map((d) => (
+              <span key={d} style={{ border: '1px solid #e0e0e0', borderRadius: 12, padding: '2px 8px', fontSize: 12 }}>
+                {d} <button className="btn" style={{ padding: '0 6px', marginLeft: 4 }} onClick={() => onRemoveHoliday(d)}>×</button>
+              </span>
+            ))}
+          </div>
+        </div>
       </aside>
       <footer className="status">
         <div>
