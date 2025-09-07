@@ -1,13 +1,18 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import GanttCanvas from './components/GanttCanvas'
 import TaskTable from './components/TaskTable'
 import EvmCard from './components/EvmCard'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
 import { parseCsvTextBrowser } from '../../src/adapters'
+import { createUseHistory, type Command } from './lib/history'
+
+const useTasksHistory = createUseHistory<TaskRow[]>([])
 
 export default function App() {
-  const [tasks, setTasks] = useState<TaskRow[]>([])
+  const hist = useTasksHistory()
+  const tasks = hist.present
   const [errors, setErrors] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
 
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -16,8 +21,9 @@ export default function App() {
     reader.onload = () => {
       const text = String(reader.result ?? '')
       const res = parseCsvTextBrowser(text)
-      setTasks(res.tasks)
+      hist.set(res.tasks)
       setErrors(res.errors.map((er) => `Row ${er.row} ${er.column ?? ''} ${er.message}`))
+      setSelectedIds([])
     }
     reader.readAsText(f, 'utf-8')
   }, [])
@@ -44,7 +50,12 @@ export default function App() {
         </div>
       </header>
       <section className="gantt">
-        <GanttCanvas tasks={tasks} />
+        <GanttCanvas
+          tasks={tasks}
+          onTasksChange={(cmd: Command<TaskRow[]>) => hist.run(cmd)}
+          selectedIds={selectedIds}
+          onSelect={setSelectedIds}
+        />
       </section>
       <section className="tasks">
         <TaskTable tasks={tasks} />
