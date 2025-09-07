@@ -287,6 +287,7 @@ export default function GanttCanvas({
     bctx.save()
     bctx.strokeStyle = '#666'
     bctx.lineWidth = 1
+    const sel = new Set(selectedIds.map(String))
     displayTasks.forEach((t) => {
       const preds = predMap.get(t.id)
       if (!preds) return
@@ -302,7 +303,9 @@ export default function GanttCanvas({
         const fromY = pIdx * rowH + 19
         // violation if successor starts before predecessor end (by date)
         const isBad = new Date(t.start) < new Date(pTask.end)
-        bctx.strokeStyle = isBad ? '#d32f2f' : '#666'
+        const isSel = sel.has(t.id) || sel.has(String(pid))
+        bctx.strokeStyle = isBad ? '#d32f2f' : (isSel ? '#1976d2' : '#666')
+        bctx.lineWidth = isSel ? 2 : 1
         // polyline: from -> (toX-10, fromY) -> (toX-10, toY) -> (toX, toY)
         bctx.beginPath()
         bctx.moveTo(fromX, fromY)
