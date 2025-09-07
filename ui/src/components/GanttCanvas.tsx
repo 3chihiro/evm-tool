@@ -79,16 +79,24 @@ export default function GanttCanvas({
   const [initStart, initEnd] = useMemo(() => {
     const src = tasks.length ? tasks : (demo ?? [])
     if (!src.length) return ['2023-12-30', '2024-01-20']
-    const starts = src.map((t: any) => new Date(t.start))
-    const finishes = src.map((t: any) => new Date(t.finish))
-    const minS = new Date(Math.min(...starts.map((d) => +d)))
-    const maxF = new Date(Math.max(...finishes.map((d) => +d)))
+    const startsAll = src.map((t: any) => new Date(t.start))
+    const finishesAll = src.map((t: any) => new Date(t.finish))
+    const starts = startsAll.filter((d: Date) => Number.isFinite(+d))
+    const finishes = finishesAll.filter((d: Date) => Number.isFinite(+d))
+    if (!starts.length || !finishes.length) return ['2023-12-30', '2024-01-20']
+    const minS = new Date(Math.min(...starts.map((d: Date) => +d)))
+    const maxF = new Date(Math.max(...finishes.map((d: Date) => +d)))
+    if (!Number.isFinite(+minS) || !Number.isFinite(+maxF)) return ['2023-12-30', '2024-01-20']
     // pad 2 days both sides
     const s = new Date(minS)
     s.setDate(s.getDate() - 2)
     const f = new Date(maxF)
     f.setDate(f.getDate() + 2)
-    return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
+    try {
+      return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
+    } catch {
+      return ['2023-12-30', '2024-01-20']
+    }
   }, [tasks, demo])
 
   const [chartStart, setChartStart] = useState<string>(initStart)
@@ -221,10 +229,10 @@ export default function GanttCanvas({
     })
     bctx.restore()
 
-    // 当たり判定の構築（計画バー基準）
+    // 当たり判定の構築（計画バー基準。縦方向は計画バー帯に限定）
     hitsRef.current = displayTasks.map((t, i) => {
       const p = planBar(t as any, chartStart, cfg)
-      return { id: t.id, x: p.x, y: i * rowH, w: p.w, row: i }
+      return { id: t.id, x: p.x, y: i * rowH, w: p.w, row: i, yBar: i * rowH + 14, hBar: 10 }
     })
 
     // バーと行区切り
