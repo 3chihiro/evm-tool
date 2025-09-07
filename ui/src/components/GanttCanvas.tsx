@@ -3,7 +3,7 @@ import { buildTripleHeader, dateToX, planBar, actualBar, xToDate } from '../../.
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 import type { Command } from '../lib/history'
 import { hitTest, snapPx, type Hit, type DragKind } from '../lib/ganttHit'
-import { isWorkingDayISO, DefaultCalendar } from '../../../evm-mvp-sprint1/evm'
+import { isWorkingDayISO, type Calendar } from '../../../evm-mvp-sprint1/evm'
 
 type GTask = { id: string; name: string; start: string; end: string; progress: number; aStart?: string; aEnd?: string }
 
@@ -14,11 +14,13 @@ export default function GanttCanvas({
   onTasksChange,
   selectedIds,
   onSelect,
+  calendar,
 }: {
   tasks: TaskRow[]
   onTasksChange: (cmd: Command<TaskRow[]>) => void
   selectedIds: (string | number)[]
   onSelect: (ids: (string | number)[]) => void
+  calendar: Calendar
 }) {
   const headerRef = useRef<HTMLCanvasElement | null>(null)
   const bodyRef = useRef<HTMLCanvasElement | null>(null)
@@ -139,7 +141,7 @@ export default function GanttCanvas({
   const snapWorkingDay = (iso: string, direction: -1 | 1): string => {
     let d = new Date(iso)
     let i = 0
-    while (!isWorkingDayISO(d.toISOString().slice(0, 10), DefaultCalendar)) {
+    while (!isWorkingDayISO(d.toISOString().slice(0, 10), calendar)) {
       d.setDate(d.getDate() + direction)
       if (++i > 10) break // safety
     }
@@ -230,7 +232,7 @@ export default function GanttCanvas({
       const d = new Date(startDate)
       d.setDate(startDate.getDate() + i)
       const iso = d.toISOString().slice(0, 10)
-      if (!isWorkingDayISO(iso, DefaultCalendar)) {
+      if (!isWorkingDayISO(iso, calendar)) {
         bctx.fillStyle = '#fafafa'
         bctx.fillRect(s.x, 0, s.w, bodyHeight)
       }

@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react'
 import { formatJPY } from '../../../src/adapters'
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
-import { computeEVM, DefaultCalendar } from '../../../evm-mvp-sprint1/evm'
+import { computeEVM, type Calendar } from '../../../evm-mvp-sprint1/evm'
 
-export default function EvmCard({ tasks }: { tasks: TaskRow[] }) {
+export default function EvmCard({ tasks, calendar }: { tasks: TaskRow[]; calendar: Calendar }) {
   const evm = useMemo(() => {
     const asOf = new Date().toISOString().slice(0, 10)
     return computeEVM(
@@ -19,9 +19,9 @@ export default function EvmCard({ tasks }: { tasks: TaskRow[] }) {
         durationDays: t.durationDays,
       })),
       asOf,
-      DefaultCalendar,
+      calendar,
     )
-  }, [tasks])
+  }, [tasks, calendar])
   const items: Array<[string, string]> = [
     ['PV', formatJPY(evm.PV)],
     ['EV', formatJPY(evm.EV)],
