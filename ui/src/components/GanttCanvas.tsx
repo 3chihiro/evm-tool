@@ -39,22 +39,34 @@ export default function GanttCanvas({
   const autoScrollReq = useRef<number | null>(null)
   const autoScrollDir = useRef<0 | -1 | 1>(0)
 
-  const baseDisplay: GTask[] = useMemo(() => {
-    if (!tasks.length) {
-      return [
+  // ローカルデモ用タスク（CSV未読み込み時の編集保持）
+  const [demo, setDemo] = useState<GTask[] | null>(null)
+  useEffect(() => {
+    if (tasks.length === 0 && demo == null) {
+      setDemo([
         { id: 'T1', name: '企画', start: '2024-01-01', end: '2024-01-05', progress: 0.6 },
         { id: 'T2', name: '設計', start: '2024-01-03', end: '2024-01-10', progress: 0.3 },
         { id: 'T3', name: '実装', start: '2024-01-08', end: '2024-01-15', progress: 0.1 },
-      ]
+      ])
     }
-    return tasks.map((t) => ({
-      id: String(t.taskId),
-      name: t.taskName,
-      start: t.start,
-      end: t.finish,
-      progress: Math.max(0, Math.min(1, (t.progressPercent ?? 0) / 100)),
-    }))
-  }, [tasks])
+    if (tasks.length > 0 && demo != null) {
+      // CSV読込後はデモ状態を解除
+      setDemo(null)
+    }
+  }, [tasks, demo])
+
+  const baseDisplay: GTask[] = useMemo(() => {
+    const source = tasks.length
+      ? tasks.map((t) => ({
+          id: String(t.taskId),
+          name: t.taskName,
+          start: t.start,
+          end: t.finish,
+          progress: Math.max(0, Math.min(1, (t.progressPercent ?? 0) / 100)),
+        }))
+      : demo ?? []
+    return source
+  }, [tasks, demo])
 
   const displayTasks: GTask[] = useMemo(() => {
     if (!preview.size) return baseDisplay
@@ -65,9 +77,10 @@ export default function GanttCanvas({
   }, [baseDisplay, preview])
 
   const [initStart, initEnd] = useMemo(() => {
-    if (!tasks.length) return ['2023-12-30', '2024-01-20']
-    const starts = tasks.map((t) => new Date(t.start))
-    const finishes = tasks.map((t) => new Date(t.finish))
+    const src = tasks.length ? tasks : (demo ?? [])
+    if (!src.length) return ['2023-12-30', '2024-01-20']
+    const starts = src.map((t: any) => new Date(t.start))
+    const finishes = src.map((t: any) => new Date(t.finish))
     const minS = new Date(Math.min(...starts.map((d) => +d)))
     const maxF = new Date(Math.max(...finishes.map((d) => +d)))
     // pad 2 days both sides
@@ -76,7 +89,7 @@ export default function GanttCanvas({
     const f = new Date(maxF)
     f.setDate(f.getDate() + 2)
     return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
-  }, [tasks])
+  }, [tasks, demo])
 
   const [chartStart, setChartStart] = useState<string>(initStart)
   const [chartEnd, setChartEnd] = useState<string>(initEnd)
@@ -372,24 +385,33 @@ export default function GanttCanvas({
         return
       }
 
-      const cmd: Command<TaskRow[]> = {
-        apply: (ts) => ts.map((row) => {
-          const id = String(row.taskId)
-          const u = next.get(id)
-          if (!u) return row
-          return { ...row, start: u.start, finish: u.end }
-        }),
-        revert: (ts) => ts.map((row) => {
-          const id = String(row.taskId)
-          if (drag.multiIds.includes(id)) {
-            // 元に戻す: baseDisplay に戻す
-            const b = baseDisplay.find((t) => t.id === id)!
-            return { ...row, start: b.start, finish: b.end }
-          }
-          return row
-        }),
+      if (tasks.length > 0) {
+        const cmd: Command<TaskRow[]> = {
+          apply: (ts) => ts.map((row) => {
+            const id = String(row.taskId)
+            const u = next.get(id)
+            if (!u) return row
+            return { ...row, start: u.start, finish: u.end }
+          }),
+          revert: (ts) => ts.map((row) => {
+            const id = String(row.taskId)
+            if (drag.multiIds.includes(id)) {
+              // 元に戻す: baseDisplay に戻す
+              const b = baseDisplay.find((t) => t.id === id)!
+              return { ...row, start: b.start, finish: b.end }
+            }
+            return row
+          }),
+        }
+        onTasksChange(cmd)
+      } else if (demo) {
+        // CSV未読み込み時はローカルデモ配列を更新
+        const upd = demo.map((d) => {
+          const u = next.get(d.id)
+          return u ? { ...d, start: u.start, end: u.end } : d
+        })
+        setDemo(upd)
       }
-      onTasksChange(cmd)
     }
 
     cv.addEventListener('pointermove', onPointerMove)
