@@ -1,18 +1,40 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { buildTripleHeader, dateToX, planBar, actualBar } from '../../../src/adapters'
+import { buildTripleHeader, dateToX, planBar, actualBar, xToDate } from '../../../src/adapters'
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
+import type { Command } from '../lib/history'
+import { hitTest, snapPx, type Hit, type DragKind } from '../lib/ganttHit'
 
 type GTask = { id: string; name: string; start: string; end: string; progress: number }
 
 const cfg = { pxPerDay: 16 }
 
-export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
+export default function GanttCanvas({
+  tasks,
+  onTasksChange,
+  selectedIds,
+  onSelect,
+}: {
+  tasks: TaskRow[]
+  onTasksChange: (cmd: Command<TaskRow[]>) => void
+  selectedIds: (string | number)[]
+  onSelect: (ids: (string | number)[]) => void
+}) {
   const headerRef = useRef<HTMLCanvasElement | null>(null)
   const bodyRef = useRef<HTMLCanvasElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [containerW, setContainerW] = useState<number>(900)
+  const hitsRef = useRef<Hit[]>([])
+  const [hover, setHover] = useState<{ id: string; kind: DragKind } | null>(null)
+  const dragRef = useRef<{
+    kind: DragKind
+    id: string
+    startX: number
+    base: { start: string; end: string }
+    multiIds: string[]
+  } | null>(null)
+  const [preview, setPreview] = useState<Map<string, { start: string; end: string }>>(new Map())
 
-  const displayTasks: GTask[] = useMemo(() => {
+  const baseDisplay: GTask[] = useMemo(() => {
     if (!tasks.length) {
       return [
         { id: 'T1', name: '企画', start: '2024-01-01', end: '2024-01-05', progress: 0.6 },
@@ -28,6 +50,14 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
       progress: Math.max(0, Math.min(1, (t.progressPercent ?? 0) / 100)),
     }))
   }, [tasks])
+
+  const displayTasks: GTask[] = useMemo(() => {
+    if (!preview.size) return baseDisplay
+    return baseDisplay.map((t) => {
+      const p = preview.get(t.id)
+      return p ? { ...t, start: p.start, end: p.end } : t
+    })
+  }, [baseDisplay, preview])
 
   const [initStart, initEnd] = useMemo(() => {
     if (!tasks.length) return ['2023-12-30', '2024-01-20']
@@ -142,6 +172,12 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     })
     bctx.restore()
 
+    // 当たり判定の構築（計画バー基準）
+    hitsRef.current = displayTasks.map((t, i) => {
+      const p = planBar(t as any, chartStart, cfg)
+      return { id: t.id, x: p.x, y: i * rowH, w: p.w, row: i }
+    })
+
     // バーと行区切り
     displayTasks.forEach((t, i) => {
       const top = i * rowH
@@ -151,8 +187,14 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
       bctx.fillRect(a.x, top + 4, a.w, 6)
       // 計画バー（黒）
       const p = planBar(t as any, chartStart, cfg)
+      const isSel = selectedIds.map(String).includes(t.id)
       bctx.fillStyle = '#000000'
       bctx.fillRect(p.x, top + 14, p.w, 10)
+      if (isSel) {
+        bctx.strokeStyle = '#ff4081'
+        bctx.lineWidth = 1.5
+        bctx.strokeRect(p.x - 0.5, top + 13.5, p.w + 1, 11)
+      }
       // 行区切り線
       bctx.strokeStyle = '#efefef'
       bctx.beginPath()
@@ -161,6 +203,130 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
       bctx.stroke()
     })
   }, [displayTasks, chartStart, chartEnd, containerW])
+
+  // ポインタイベント: hover/drag/select
+  useEffect(() => {
+    const cv = bodyRef.current
+    const sc = scrollRef.current
+    if (!cv || !sc) return
+    let raf = 0
+
+    const toLocal = (e: PointerEvent) => {
+      const rect = cv.getBoundingClientRect()
+      const mx = e.clientX - rect.left + sc.scrollLeft
+      const my = e.clientY - rect.top + sc.scrollTop
+      return { mx, my }
+    }
+
+    const onPointerMove = (e: PointerEvent) => {
+      const { mx, my } = toLocal(e)
+      const dragging = dragRef.current
+      if (!dragging) {
+        const h = hitTest(mx, my, hitsRef.current)
+        setHover(h)
+        cv.style.cursor = h ? (h.kind.includes('resize') ? 'ew-resize' : 'grab') : 'default'
+        return
+      }
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        // ドラッグ距離→スナップ（日単位）
+        const dx = mx - dragging.startX
+        const snappedDx = snapPx(dx, cfg.pxPerDay)
+        const deltaDays = Math.round(snappedDx / cfg.pxPerDay)
+
+        // 対象ID集合
+        const ids = dragging.multiIds
+        const next = new Map(preview)
+        ids.forEach((id) => {
+          const base = baseDisplay.find((t) => t.id === id)!
+          if (dragging.kind === 'move') {
+            const s = new Date(base.start)
+            s.setDate(s.getDate() + deltaDays)
+            const f = new Date(base.end)
+            f.setDate(f.getDate() + deltaDays)
+            next.set(id, { start: s.toISOString().slice(0, 10), end: f.toISOString().slice(0, 10) })
+          } else if (dragging.kind === 'resize-left') {
+            const s = new Date(base.start)
+            s.setDate(s.getDate() + deltaDays)
+            // 最小1日
+            const f = new Date(base.end)
+            if (+s >= +f) s.setDate(f.getDate() - 1)
+            next.set(id, { start: s.toISOString().slice(0, 10), end: base.end })
+          } else if (dragging.kind === 'resize-right') {
+            const f = new Date(base.end)
+            f.setDate(f.getDate() + deltaDays)
+            const s = new Date(base.start)
+            if (+f <= +s) f.setDate(s.getDate() + 1)
+            next.set(id, { start: base.start, end: f.toISOString().slice(0, 10) })
+          }
+        })
+        setPreview(next)
+      })
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      const { mx, my } = toLocal(e)
+      const h = hitTest(mx, my, hitsRef.current)
+      if (!h) return
+      const clickedId = h.id
+      const isAdd = e.metaKey || e.ctrlKey
+      let newSelection = selectedIds.map(String)
+      if (isAdd) {
+        if (newSelection.includes(clickedId)) newSelection = newSelection.filter((id) => id !== clickedId)
+        else newSelection = [...newSelection, clickedId]
+      } else if (!newSelection.includes(clickedId)) {
+        newSelection = [clickedId]
+      }
+      onSelect(newSelection)
+
+      const multiIds = newSelection.length ? newSelection.map(String) : [clickedId]
+      const base = baseDisplay.find((t) => t.id === clickedId)!
+      dragRef.current = { kind: h.kind, id: clickedId, startX: mx, base: { start: base.start, end: base.end }, multiIds }
+      cv.setPointerCapture(e.pointerId)
+      cv.style.cursor = h.kind.includes('resize') ? 'ew-resize' : 'grabbing'
+    }
+
+    const onPointerUp = (e: PointerEvent) => {
+      const drag = dragRef.current
+      dragRef.current = null
+      cv.releasePointerCapture(e.pointerId)
+      cv.style.cursor = 'default'
+      if (!drag) return
+
+      const next = new Map(preview)
+      const updates = Array.from(next.entries()) // [id, {start,end}]
+      setPreview(new Map())
+      if (!updates.length) return
+
+      const cmd: Command<TaskRow[]> = {
+        apply: (ts) => ts.map((row) => {
+          const id = String(row.taskId)
+          const u = next.get(id)
+          if (!u) return row
+          return { ...row, start: u.start, finish: u.end }
+        }),
+        revert: (ts) => ts.map((row) => {
+          const id = String(row.taskId)
+          if (drag.multiIds.includes(id)) {
+            // 元に戻す: baseDisplay に戻す
+            const b = baseDisplay.find((t) => t.id === id)!
+            return { ...row, start: b.start, finish: b.end }
+          }
+          return row
+        }),
+      }
+      onTasksChange(cmd)
+    }
+
+    cv.addEventListener('pointermove', onPointerMove)
+    cv.addEventListener('pointerdown', onPointerDown)
+    cv.addEventListener('pointerup', onPointerUp)
+    return () => {
+      cv.removeEventListener('pointermove', onPointerMove)
+      cv.removeEventListener('pointerdown', onPointerDown)
+      cv.removeEventListener('pointerup', onPointerUp)
+    }
+  }, [baseDisplay, displayTasks, chartStart, onSelect, onTasksChange, preview, selectedIds])
 
   // Horizontal range expansion on scroll edges
   useEffect(() => {
