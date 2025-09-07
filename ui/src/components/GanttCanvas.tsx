@@ -275,8 +275,10 @@ export default function GanttCanvas({
 
     const toLocal = (e: PointerEvent) => {
       const rect = cv.getBoundingClientRect()
-      const mx = e.clientX - rect.left + sc.scrollLeft
-      const my = e.clientY - rect.top + sc.scrollTop
+      const sx = cv.width / rect.width
+      const sy = cv.height / rect.height
+      const mx = (e.clientX - rect.left + sc.scrollLeft) * sx
+      const my = (e.clientY - rect.top + sc.scrollTop) * sy
       return { mx, my }
     }
 
