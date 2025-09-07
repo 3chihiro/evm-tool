@@ -15,6 +15,8 @@ export interface TaskRow {
   plannedCost?: number;
   actualCost?: number;
   notes?: string;
+  // Optional: predecessor task IDs for dependency constraints (Phase2+)
+  predIds?: number[];
 }
 
 export interface ImportError {
@@ -33,4 +35,3 @@ export interface ImportResult {
     failed: number; // rows with at least one error considered failed
   };
 }
-

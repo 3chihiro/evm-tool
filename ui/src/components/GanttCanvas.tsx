@@ -3,6 +3,7 @@ import { buildTripleHeader, dateToX, planBar, actualBar, xToDate } from '../../.
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 import type { Command } from '../lib/history'
 import { hitTest, snapPx, type Hit, type DragKind } from '../lib/ganttHit'
+import { isWorkingDayISO, DefaultCalendar } from '../../../evm-mvp-sprint1/evm'
 
 type GTask = { id: string; name: string; start: string; end: string; progress: number }
 
@@ -33,6 +34,10 @@ export default function GanttCanvas({
     multiIds: string[]
   } | null>(null)
   const [preview, setPreview] = useState<Map<string, { start: string; end: string }>>(new Map())
+  const [violations, setViolations] = useState<Set<string>>(new Set())
+  const [toast, setToast] = useState<string | null>(null)
+  const autoScrollReq = useRef<number | null>(null)
+  const autoScrollDir = useRef<0 | -1 | 1>(0)
 
   const baseDisplay: GTask[] = useMemo(() => {
     if (!tasks.length) {
@@ -93,6 +98,37 @@ export default function GanttCanvas({
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
   }, [])
+
+  // Business-day snap helper
+  const snapWorkingDay = (iso: string, direction: -1 | 1): string => {
+    let d = new Date(iso)
+    let i = 0
+    while (!isWorkingDayISO(d.toISOString().slice(0, 10), DefaultCalendar)) {
+      d.setDate(d.getDate() + direction)
+      if (++i > 10) break // safety
+    }
+    return d.toISOString().slice(0, 10)
+  }
+
+  // Validate dependencies for preview
+  const validateDeps = (next: Map<string, { start: string; end: string }>): Set<string> => {
+    const idToTask = new Map<string, TaskRow>(tasks.map((t) => [String(t.taskId), t]))
+    const bad = new Set<string>()
+    next.forEach((u, id) => {
+      const row = idToTask.get(id)
+      if (!row || !row.predIds || row.predIds.length === 0) return
+      for (const pid of row.predIds) {
+        const p = idToTask.get(String(pid))
+        if (!p) continue
+        const pf = p.finish
+        if (u.start < pf) {
+          bad.add(id)
+          break
+        }
+      }
+    })
+    return bad
+  }
 
   useEffect(() => {
     const headerCanvas = headerRef.current
@@ -195,6 +231,11 @@ export default function GanttCanvas({
         bctx.lineWidth = 1.5
         bctx.strokeRect(p.x - 0.5, top + 13.5, p.w + 1, 11)
       }
+      if (violations.has(t.id)) {
+        bctx.strokeStyle = '#d32f2f'
+        bctx.lineWidth = 2
+        bctx.strokeRect(p.x - 1, top + 13, p.w + 2, 12)
+      }
       // 行区切り線
       bctx.strokeStyle = '#efefef'
       bctx.beginPath()
@@ -202,7 +243,7 @@ export default function GanttCanvas({
       bctx.lineTo(contentW, top + rowH)
       bctx.stroke()
     })
-  }, [displayTasks, chartStart, chartEnd, containerW])
+  }, [displayTasks, chartStart, chartEnd, containerW, violations])
 
   // ポインタイベント: hover/drag/select
   useEffect(() => {
@@ -227,6 +268,21 @@ export default function GanttCanvas({
         cv.style.cursor = h ? (h.kind.includes('resize') ? 'ew-resize' : 'grab') : 'default'
         return
       }
+      // autoscroll trigger near edges
+      const contRect = sc.getBoundingClientRect()
+      const threshold = 40
+      if (e.clientX < contRect.left + threshold) autoScrollDir.current = -1
+      else if (e.clientX > contRect.right - threshold) autoScrollDir.current = 1
+      else autoScrollDir.current = 0
+      if (autoScrollReq.current == null && autoScrollDir.current !== 0) {
+        const step = () => {
+          if (!dragRef.current) { autoScrollReq.current = null; return }
+          if (autoScrollDir.current === 0) { autoScrollReq.current = null; return }
+          sc.scrollLeft += autoScrollDir.current * 12
+          autoScrollReq.current = requestAnimationFrame(step)
+        }
+        autoScrollReq.current = requestAnimationFrame(step)
+      }
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         // ドラッグ距離→スナップ（日単位）
@@ -244,22 +300,32 @@ export default function GanttCanvas({
             s.setDate(s.getDate() + deltaDays)
             const f = new Date(base.end)
             f.setDate(f.getDate() + deltaDays)
-            next.set(id, { start: s.toISOString().slice(0, 10), end: f.toISOString().slice(0, 10) })
+            let sIso = s.toISOString().slice(0, 10)
+            let fIso = f.toISOString().slice(0, 10)
+            sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
+            fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
+            next.set(id, { start: sIso, end: fIso })
           } else if (dragging.kind === 'resize-left') {
             const s = new Date(base.start)
             s.setDate(s.getDate() + deltaDays)
             // 最小1日
             const f = new Date(base.end)
             if (+s >= +f) s.setDate(f.getDate() - 1)
-            next.set(id, { start: s.toISOString().slice(0, 10), end: base.end })
+            let sIso = s.toISOString().slice(0, 10)
+            sIso = snapWorkingDay(sIso, deltaDays >= 0 ? 1 : -1)
+            next.set(id, { start: sIso, end: base.end })
           } else if (dragging.kind === 'resize-right') {
             const f = new Date(base.end)
             f.setDate(f.getDate() + deltaDays)
             const s = new Date(base.start)
             if (+f <= +s) f.setDate(s.getDate() + 1)
-            next.set(id, { start: base.start, end: f.toISOString().slice(0, 10) })
+            let fIso = f.toISOString().slice(0, 10)
+            fIso = snapWorkingDay(fIso, deltaDays >= 0 ? 1 : -1)
+            next.set(id, { start: base.start, end: fIso })
           }
         })
+        const bad = validateDeps(next)
+        setViolations(bad)
         setPreview(next)
       })
     }
@@ -291,12 +357,20 @@ export default function GanttCanvas({
       dragRef.current = null
       cv.releasePointerCapture(e.pointerId)
       cv.style.cursor = 'default'
+      autoScrollDir.current = 0
+      if (autoScrollReq.current != null) { cancelAnimationFrame(autoScrollReq.current); autoScrollReq.current = null }
       if (!drag) return
 
       const next = new Map(preview)
       const updates = Array.from(next.entries()) // [id, {start,end}]
       setPreview(new Map())
       if (!updates.length) return
+      if (violations.size > 0) {
+        setToast('依存関係の制約により適用できません')
+        setTimeout(() => setToast(null), 1500)
+        setViolations(new Set())
+        return
+      }
 
       const cmd: Command<TaskRow[]> = {
         apply: (ts) => ts.map((row) => {
@@ -371,6 +445,9 @@ export default function GanttCanvas({
         </div>
         <canvas ref={bodyRef} className="gantt-canvas" style={{ height: '240px' }} />
       </div>
+      {toast && (
+        <div style={{ marginTop: 6, fontSize: 12, color: '#d32f2f' }}>{toast}</div>
+      )}
     </div>
   )
 }
