@@ -1,18 +1,44 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { buildTripleHeader, dateToX, planBar, actualBar } from '../../../src/adapters'
+import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 
-const dummyTasks = [
-  { id: 'T1', name: '企画', start: '2024-01-01', end: '2024-01-05', progress: 0.6 },
-  { id: 'T2', name: '設計', start: '2024-01-03', end: '2024-01-10', progress: 0.3 },
-  { id: 'T3', name: '実装', start: '2024-01-08', end: '2024-01-15', progress: 0.1 },
-]
+type GTask = { id: string; name: string; start: string; end: string; progress: number }
 
 const cfg = { pxPerDay: 16 }
-const chartStart = '2023-12-30'
-const chartEnd = '2024-01-20'
 
-export default function GanttCanvas() {
+export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  const displayTasks: GTask[] = useMemo(() => {
+    if (!tasks.length) {
+      return [
+        { id: 'T1', name: '企画', start: '2024-01-01', end: '2024-01-05', progress: 0.6 },
+        { id: 'T2', name: '設計', start: '2024-01-03', end: '2024-01-10', progress: 0.3 },
+        { id: 'T3', name: '実装', start: '2024-01-08', end: '2024-01-15', progress: 0.1 },
+      ]
+    }
+    return tasks.map((t) => ({
+      id: String(t.taskId),
+      name: t.taskName,
+      start: t.start,
+      end: t.finish,
+      progress: Math.max(0, Math.min(1, (t.progressPercent ?? 0) / 100)),
+    }))
+  }, [tasks])
+
+  const [chartStart, chartEnd] = useMemo(() => {
+    if (!tasks.length) return ['2023-12-30', '2024-01-20']
+    const starts = tasks.map((t) => new Date(t.start))
+    const finishes = tasks.map((t) => new Date(t.finish))
+    const minS = new Date(Math.min(...starts.map((d) => +d)))
+    const maxF = new Date(Math.max(...finishes.map((d) => +d)))
+    // pad 2 days both sides
+    const s = new Date(minS)
+    s.setDate(s.getDate() - 2)
+    const f = new Date(maxF)
+    f.setDate(f.getDate() + 2)
+    return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
+  }, [tasks])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -28,7 +54,7 @@ export default function GanttCanvas() {
     const width = 900
     const headerHeight = 60
     const rowH = 28
-    const height = headerHeight + dummyTasks.length * rowH + 20
+    const height = headerHeight + displayTasks.length * rowH + 20
     canvas.width = width
     canvas.height = height
 
@@ -55,7 +81,7 @@ export default function GanttCanvas() {
     })
 
     // 各行とバー描画
-    dummyTasks.forEach((t, i) => {
+    displayTasks.forEach((t, i) => {
       const top = headerHeight + i * rowH
       // 計画バー（青）
       const p = planBar(t as any, chartStart, cfg)
@@ -72,11 +98,11 @@ export default function GanttCanvas() {
       ctx.lineTo(width, top + rowH)
       ctx.stroke()
     })
-  }, [])
+  }, [displayTasks, chartStart, chartEnd])
 
   return (
     <div>
-      <div className="panel-title">ガント（ダミー）</div>
+      <div className="panel-title">ガント</div>
       <canvas ref={canvasRef} style={{ width: '100%', height: '240px' }} />
     </div>
   )
