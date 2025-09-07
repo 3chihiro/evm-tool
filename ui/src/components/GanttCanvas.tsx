@@ -83,14 +83,14 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
     // 各行とバー描画
     displayTasks.forEach((t, i) => {
       const top = headerHeight + i * rowH
-      // 計画バー（青）
-      const p = planBar(t as any, chartStart, cfg)
-      ctx.fillStyle = '#4C78A8'
-      ctx.fillRect(p.x, top + 6, p.w, 10)
-      // 実績バー（緑）— ダミー短尺
+      // 実績バー（上段）
       const a = actualBar(t as any, chartStart, cfg)
-      ctx.fillStyle = '#59A14F'
-      ctx.fillRect(a.x, top + 18, a.w, 6)
+      ctx.fillStyle = '#59A14F' // actual: green
+      ctx.fillRect(a.x, top + 4, a.w, 6)
+      // 計画バー（黒・固定、下段）
+      const p = planBar(t as any, chartStart, cfg)
+      ctx.fillStyle = '#000000'
+      ctx.fillRect(p.x, top + 14, p.w, 10)
       // 行区切り線
       ctx.strokeStyle = '#f0f0f0'
       ctx.beginPath()
@@ -103,6 +103,16 @@ export default function GanttCanvas({ tasks }: { tasks: TaskRow[] }) {
   return (
     <div>
       <div className="panel-title">ガント</div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ display: 'inline-block', width: 18, height: 6, background: '#59A14F', borderRadius: 2 }} />
+          <span style={{ fontSize: 12, color: '#666' }}>実績（上段）</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ display: 'inline-block', width: 18, height: 10, background: '#000' }} />
+          <span style={{ fontSize: 12, color: '#666' }}>計画（黒・下段）</span>
+        </div>
+      </div>
       <canvas ref={canvasRef} style={{ width: '100%', height: '240px' }} />
     </div>
   )
