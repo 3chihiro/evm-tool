@@ -73,6 +73,14 @@ export default function App() {
           </div>
         )}
       </aside>
+      <footer className="status">
+        <div>
+          選択中 {selectedIds.length} 件 ・ Escでキャンセル
+        </div>
+        <div>
+          <button className="btn" disabled={selectedIds.length === 0} onClick={() => setSelectedIds([])}>選択解除</button>
+        </div>
+      </footer>
     </div>
   )
 }
