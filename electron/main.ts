@@ -16,10 +16,25 @@ function createWindow() {
   const isDev = !!process.env.VITE_DEV;
   if (isDev) {
     win.loadURL('http://localhost:5173');
+    win.webContents.openDevTools({ mode: 'detach' });
   } else {
     const indexHtml = join(process.cwd(), 'ui', 'dist', 'index.html');
     win.loadFile(indexHtml);
   }
+
+  // Debug diagnostics for white screen
+  win.webContents.on('did-fail-load', (_e, code, desc) => {
+    const html = `<h2>Renderer failed to load</h2><p>${code}: ${desc}</p>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    const html = `<h2>Renderer crashed</h2><pre>${JSON.stringify(details)}</pre>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  });
+  win.on('unresponsive', () => {
+    const html = `<h2>Window unresponsive</h2><p>Please restart the app.</p>`;
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  });
 }
 
 app.whenReady().then(() => {
