@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import GanttCanvas from './components/GanttCanvas'
 import TaskTable from './components/TaskTable'
+import TaskDetailsPanel from './components/TaskDetailsPanel'
 import EvmCard from './components/EvmCard'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
 import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
@@ -65,7 +66,9 @@ export default function App() {
         />
       </section>
       <section className="tasks">
-        <TaskTable tasks={tasks} />
+        <TaskDetailsPanel tasks={tasks} selectedIds={selectedIds} onTasksChange={(cmd) => hist.run(cmd)} />
+        <div style={{ height: 8 }} />
+        <TaskTable tasks={tasks} selectedIds={selectedIds} onSelect={setSelectedIds} />
       </section>
       <aside className="evm">
         <EvmCard tasks={tasks} />
