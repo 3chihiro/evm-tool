@@ -6,6 +6,8 @@ export interface TaskRow {
   taskName: string;
   start: string; // YYYY-MM-DD
   finish: string; // YYYY-MM-DD
+  actualStart?: string; // optional for interactive actual bar
+  actualFinish?: string;
   durationDays?: number;
   progressPercent?: number;
   resourceType?: ResourceType;
