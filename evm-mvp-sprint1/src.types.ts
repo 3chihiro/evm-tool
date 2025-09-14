@@ -35,5 +35,13 @@ export interface ImportResult {
     rows: number; // data rows (excluding header)
     imported: number;
     failed: number; // rows with at least one error considered failed
+    byColumn?: Record<string, number>; // optional: error counts by column name
   };
+}
+
+export interface CsvParseOptions {
+  // 依存関係（Dependencies）でCSV内に存在しない TaskID を参照している場合の扱い
+  // 'error' = エラーとして行を除外（デフォルト）
+  // 'warn'  = エラーを出さず取り込む（predIds はそのまま）
+  unknownDeps?: 'error' | 'warn';
 }

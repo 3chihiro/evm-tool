@@ -1,5 +1,5 @@
 // Browser-friendly CSV import (no fs). Aligns with evm-mvp-sprint1/parseCsv.ts
-import type { ImportError, ImportResult, TaskRow, ResourceType } from '../../evm-mvp-sprint1/src.types'
+import type { ImportError, ImportResult, TaskRow, ResourceType, CsvParseOptions } from '../../evm-mvp-sprint1/src.types'
 
 type RowObject = Record<string, string>
 
@@ -118,7 +118,8 @@ function parseResourceType(s: string | undefined): ResourceType | undefined {
   return undefined
 }
 
-export function parseCsvTextBrowser(csvText: string): ImportResult {
+export function parseCsvTextBrowser(csvText: string, options?: CsvParseOptions): ImportResult {
+  const opts: Required<CsvParseOptions> = { unknownDeps: (options?.unknownDeps ?? 'error') } as any
   const rows = parseCsvCore(csvText)
   if (rows.length === 0) {
     return { tasks: [], errors: [], stats: { rows: 0, imported: 0, failed: 0 } }
@@ -130,12 +131,23 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
 
   for (const rh of REQUIRED_HEADERS) {
     if (!(rh in hmap)) {
-      errors.push({ row: 1, column: rh, message: `Missing header: ${rh}` })
+      errors.push({ row: 1, column: rh, message: `ヘッダ不足: ${rh}` })
     }
   }
   if (errors.length) {
     return { tasks, errors, stats: { rows: Math.max(0, rows.length - 1), imported: 0, failed: Math.max(0, rows.length - 1) } }
   }
+
+  // 依存関係の存在確認用に全TaskIDを収集
+  const allTaskIds = new Set<number>()
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r]
+    const cell = (name: string) => getCell(row, hmap[name] ?? -1)
+    const idNum = parseNumber(cell('TaskID'))
+    if (idNum != null) allTaskIds.add(idNum)
+  }
+
+  const candidates: { rowIndex: number; task: TaskRow; depsRaw: string | undefined }[] = []
 
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r]
@@ -163,13 +175,18 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
       : undefined
     const notes = cell('Notes') || undefined
 
-    if (!projectName) rowErrors.push({ row: r + 1, column: 'ProjectName', message: 'ProjectName required' })
-    if (taskIdNum == null) rowErrors.push({ row: r + 1, column: 'TaskID', message: 'TaskID required as number', value: cell('TaskID') })
-    if (!taskName) rowErrors.push({ row: r + 1, column: 'TaskName', message: 'TaskName required' })
-    if (!startStr) rowErrors.push({ row: r + 1, column: 'Start', message: 'Start must be YYYY-MM-DD', value: cell('Start') })
-    if (!finishStr) rowErrors.push({ row: r + 1, column: 'Finish', message: 'Finish must be YYYY-MM-DD', value: cell('Finish') })
+    if (!projectName) rowErrors.push({ row: r + 1, column: 'ProjectName', message: 'ProjectName は必須です' })
+    if (taskIdNum == null) rowErrors.push({ row: r + 1, column: 'TaskID', message: 'TaskID は数値で入力してください', value: cell('TaskID') })
+    if (!taskName) rowErrors.push({ row: r + 1, column: 'TaskName', message: 'TaskName は必須です' })
+    if (!startStr) rowErrors.push({ row: r + 1, column: 'Start', message: 'Start は YYYY-MM-DD 形式で入力してください', value: cell('Start') })
+    if (!finishStr) rowErrors.push({ row: r + 1, column: 'Finish', message: 'Finish は YYYY-MM-DD 形式で入力してください', value: cell('Finish') })
     if (cell('ResourceType')) {
-      if (!resourceType) rowErrors.push({ row: r + 1, column: 'ResourceType', message: 'ResourceType must be 社内 or 協力', value: cell('ResourceType') })
+      if (!resourceType) rowErrors.push({ row: r + 1, column: 'ResourceType', message: 'ResourceType は「社内」または「協力」を指定してください', value: cell('ResourceType') })
+    }
+    if (progressPercent != null) {
+      if (progressPercent < 0 || progressPercent > 100) {
+        rowErrors.push({ row: r + 1, column: 'ProgressPercent', message: 'ProgressPercent は 0-100 の範囲で指定してください', value: cell('ProgressPercent') })
+      }
     }
 
     const task: TaskRow = {
@@ -193,15 +210,30 @@ export function parseCsvTextBrowser(csvText: string): ImportResult {
     }
 
     if (rowErrors.length === 0) {
-      tasks.push(task)
+      candidates.push({ rowIndex: r + 1, task, depsRaw })
     }
     errors.push(...rowErrors)
   }
 
+  // 未知の依存TaskID検出
+  for (const c of candidates) {
+    const unknown = (c.task.predIds ?? []).filter((id) => !allTaskIds.has(id))
+    if (unknown.length && opts.unknownDeps === 'error') {
+      const depsCell = getCell(rows[c.rowIndex - 1], hmap['Dependencies'] ?? -1)
+      errors.push({ row: c.rowIndex, column: 'Dependencies', message: `Dependencies に存在しない TaskID: ${unknown.join(', ')}`, value: depsCell })
+      continue
+    }
+    tasks.push(c.task)
+  }
+
   const dataRows = Math.max(0, rows.length - 1)
-  const failed = new Set<number>()
-  for (const e of errors) failed.add(e.row)
-  if (errors.some((e) => e.row === 1)) failed.delete(1)
+  const failedSet = new Set<number>()
+  for (const e of errors) failedSet.add(e.row)
+  if (errors.some((e) => e.row === 1)) failedSet.delete(1)
   const imported = tasks.length
-  return { tasks, errors, stats: { rows: dataRows, imported, failed: Math.max(0, failed.size) } }
+  const byColumn: Record<string, number> = {}
+  for (const e of errors) {
+    if (e.column) byColumn[e.column] = (byColumn[e.column] ?? 0) + 1
+  }
+  return { tasks, errors, stats: { rows: dataRows, imported, failed: Math.max(0, failedSet.size), byColumn } }
 }

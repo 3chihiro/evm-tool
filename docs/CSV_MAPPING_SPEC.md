@@ -27,6 +27,10 @@ CSV 列と内部型 `TaskRow` のマッピング仕様（Sprint1）。パーサ�
 - 日付: 厳密に `YYYY-MM-DD`（例: `2025-01-05`）。不一致はエラー。
 - リソース種別: `社内` or `協力` のみ。その他はエラー。
 - 依存: 例 `"10, 20"` → `[10, 20]`。数値化できない項目は破棄。
+ - 依存（存在確認）: CSV内に存在しない TaskID を参照した場合は既定でエラー（列=Dependencies）とし、その行は取り込まない。
+   - オプションで緩和可能: `unknownDeps: 'warn'` を指定するとエラーにせず取り込み（`predIds` はそのまま保持）。
+     - Node: `parseCsv(path, { unknownDeps: 'warn' })`
+     - ブラウザ: `parseCsvTextBrowser(text, { unknownDeps: 'warn' })`
 - 空文字や欠損セルは `undefined` として扱う。
 
 ## インポート結果
