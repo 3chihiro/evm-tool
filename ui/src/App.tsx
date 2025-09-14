@@ -4,6 +4,7 @@ import TaskTable from './components/TaskTable'
 import TaskDetailsPanel from './components/TaskDetailsPanel'
 import ErrorBoundary from './components/ErrorBoundary'
 import EvmCard from './components/EvmCard'
+import Modal from './components/Modal'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
 import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
 import { createUseHistory, type Command } from './lib/history'
@@ -16,6 +17,15 @@ export default function App() {
   const tasks = hist.present
   const [errors, setErrors] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
+  const [errorByColumn, setErrorByColumn] = useState<Record<string, number> | undefined>(undefined)
+  const [importStats, setImportStats] = useState<{ rows: number; imported: number; failed: number } | undefined>(undefined)
+  const [unknownDepsMode, setUnknownDepsMode] = useState<'error' | 'warn'>(() => {
+    try {
+      const v = localStorage.getItem('evm_unknown_deps')
+      return (v === 'warn' || v === 'error') ? v : 'error'
+    } catch { return 'error' }
+  })
+  const [showImportDialog, setShowImportDialog] = useState<boolean>(false)
   const [calendar, setCalendar] = useState<Calendar>(() => {
     // restore from localStorage
     try {
@@ -33,13 +43,16 @@ export default function App() {
     const reader = new FileReader()
     reader.onload = () => {
       const text = String(reader.result ?? '')
-      const res = parseCsvTextBrowser(text)
+      const res = parseCsvTextBrowser(text, { unknownDeps: unknownDepsMode })
       hist.set(res.tasks)
       setErrors(res.errors.map((er) => `Row ${er.row} ${er.column ?? ''} ${er.message}`))
+      setErrorByColumn(res.stats.byColumn)
+      setImportStats({ rows: res.stats.rows, imported: res.stats.imported, failed: res.stats.failed })
       setSelectedIds([])
+      setShowImportDialog(true)
     }
     reader.readAsText(f, 'utf-8')
-  }, [])
+  }, [unknownDepsMode])
 
   const projectName = useMemo(() => tasks[0]?.projectName ?? '', [tasks])
 
@@ -87,11 +100,52 @@ export default function App() {
 
   return (
     <div className="app-grid">
+      <Modal open={showImportDialog} title="CSVインポート結果" onClose={() => setShowImportDialog(false)}>
+        {importStats ? (
+          <div>
+            <div style={{ marginBottom: 8, fontSize: 13 }}>
+              行数 {importStats.rows} / 取込 {importStats.imported} / 失敗 {importStats.failed}
+            </div>
+            {errorByColumn && Object.keys(errorByColumn).length > 0 && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#333' }}>
+                列別件数: {Object.entries(errorByColumn).map(([k,v]) => `${k}:${v}`).join(' / ')}
+              </div>
+            )}
+            {errors.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13 }}>先頭のエラー（最大10件）</div>
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {errors.slice(0, 10).map((e, i) => (
+                    <li key={i} style={{ color: '#b00', fontSize: 12 }}>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>結果なし</div>
+        )}
+      </Modal>
       <header className="header">
         <h1>EVM Tool UI Shell</h1>
         <div style={{ marginLeft: '16px', fontSize: 12, color: '#666' }}>{projectName && `（${projectName}）`}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="file" accept=".csv" onChange={onFileChange} />
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
+            未知依存の扱い
+            <select
+              value={unknownDepsMode}
+              onChange={(e) => {
+                const v = (e.target.value === 'warn') ? 'warn' : 'error'
+                setUnknownDepsMode(v)
+                try { localStorage.setItem('evm_unknown_deps', v) } catch {}
+              }}
+              style={{ fontSize: 12 }}
+            >
+              <option value="error">厳格（エラーで除外）</option>
+              <option value="warn">警告（取り込む）</option>
+            </select>
+          </label>
           <button onClick={onExportCsv}>CSV出力</button>
           <button onClick={onExportPDF}>PDF出力</button>
         </div>
@@ -119,6 +173,16 @@ export default function App() {
         {errors.length > 0 && (
           <div style={{ marginTop: 8 }}>
             <div className="panel-title">インポートエラー</div>
+            {importStats && (
+              <div style={{ margin: '4px 0', fontSize: 12, color: '#333' }}>
+                要約: 行数 {importStats.rows} / 取込 {importStats.imported} / 失敗 {importStats.failed}
+              </div>
+            )}
+            {errorByColumn && Object.keys(errorByColumn).length > 0 && (
+              <div style={{ margin: '4px 0 8px', fontSize: 12, color: '#333' }}>
+                列別件数: {Object.entries(errorByColumn).map(([k,v]) => `${k}:${v}`).join(' / ')}
+              </div>
+            )}
             <ul style={{ margin: 0, paddingLeft: 16 }}>
               {errors.map((e, i) => (
                 <li key={i} style={{ color: '#b00', fontSize: 12 }}>{e}</li>
