@@ -1,12 +1,62 @@
-name: CI Test
+name: CI
 
+# 1) 走る条件を限定
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main             # main だけ
+    paths:               # これ以外の変更では動かない
+      - "src/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  pull_request:          # PR時は全ブランチでテスト（レビュー用）
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:     # 必要時だけ手動実行
+
+# 2) 同一ブランチの古い実行を自動キャンセル（タイムライン圧縮）
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 3) 古いランを自動削除（表示も課金もスッキリ）
+#    例: 7日で自動削除（必要に応じて 14/30/90 に）
+run-name: "CI #${{ github.run_number }}: ${{ github.event_name }} by ${{ github.actor }}"
+permissions: read-all
+# リポジトリの Settings > Actions > Retention で全体設定も可能
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - run: echo "GitHub Actions が動きました！"
+
+      # 4) 変更が「ドキュメントだけ」っぽい時はスキップ（ダメ押し）
+      - name: Skip docs-only commits
+        if: contains(github.event.head_commit.message, '[skip ci]')
+        run: echo "User requested skip via [skip ci]"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install
+        run: pnpm i --frozen-lockfile || npm ci
+
+      - name: Test
+        run: npm test --silent
+
+      # 5) 成果物(あれば)を短期保存に
+      - name: Upload coverage
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/**
+          retention-days: 3
