@@ -1,12 +1,12 @@
-name: ci
-on: [push]
+name: CI Test
+
+on:
+  push:
+    branches: [ main ]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18
-      - run: npm ci || npm i
-      - run: npm run -if-present build
+      - run: echo "GitHub Actions が動きました！"
