@@ -114,11 +114,19 @@ export default function GanttCanvas({
     const minS = new Date(Math.min(...starts.map((d: Date) => +d)))
     const maxF = new Date(Math.max(...finishes.map((d: Date) => +d)))
     if (!Number.isFinite(+minS) || !Number.isFinite(+maxF)) return ['2023-12-30', '2024-01-20']
-    // pad 2 days both sides
-    const s = new Date(minS)
-    s.setDate(s.getDate() - 2)
-    const f = new Date(maxF)
-    f.setDate(f.getDate() + 2)
+
+    // Expand to month boundaries and ensure at least multiple months are visible
+    const firstOfMonth = (d: Date) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
+    const lastOfMonth = (d: Date) => { const x = new Date(d); x.setMonth(x.getMonth() + 1, 0); x.setHours(0,0,0,0); return x }
+    const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x }
+    let s = firstOfMonth(minS)
+    let f = lastOfMonth(maxF)
+    const sameMonth = s.getFullYear() === f.getFullYear() && s.getMonth() === f.getMonth()
+    if (sameMonth) {
+      // If tasks fall within a single month, show previous and next months as context
+      s = firstOfMonth(addMonths(s, -1))
+      f = lastOfMonth(addMonths(f, +1))
+    }
     try {
       return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
     } catch {
