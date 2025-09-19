@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## v0.2.0 — Workflow assistant, CSV error export, Gantt range/zoom (2025-09-18)
+
+- Git workflow assistant
+  - Add interactive CLI `npm run git:workflow` for status → stage → commit → push → PR support
+  - Add `.github/PULL_REQUEST_TEMPLATE.md`
+  - Add `docs/git-workflow.md`
+- CI/CD
+  - Run tests on PR; type-check Electron main; build renderer
+  - Package Electron only on tags; add tag-based release workflow (multi-OS)
+  - Cache npm in CI
+- Electron packaging
+  - Separate main/preload build to `dist-electron/` and include `ui/dist` in package
+  - Fix packaged path resolution for loading `ui/dist/index.html`
+- UI tests
+  - Mock Canvas 2D context in jsdom; register setup file in Vitest config
+- CSV
+  - Export import errors to CSV (Row, Column, Message, Value) and add UI button to download
+- Gantt
+  - Expand chart range to full months; ensure multiple months view
+  - Configurable minimum months (2/3/6) and adjustable initial zoom (px/day)
+  - Dim out-of-range grid area and draw a vertical today line
+  - Header labels centered and thinned based on zoom to avoid clutter
+
 ## v0.3.0 — Interactive Gantt MVP (YYYY-MM-DD)
 
 - Gantt Interactions Phase 1
@@ -32,4 +55,3 @@ All notable changes to this project will be documented in this file.
 Notes:
 - jsdom Canvas is not implemented; UI tests run as smoke tests without canvas context.
 - `predIds` can be set to enable plan dependency checks.
-

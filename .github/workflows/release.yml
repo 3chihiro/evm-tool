@@ -23,9 +23,15 @@ jobs:
         run: npx tsc -p electron
       - name: Package Electron app
         run: npm run build:electron
+      - name: Create GitHub Release and upload
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: app-${{ runner.os }}
           path: release/**
-
