@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## v0.2.0 — Workflow assistant, CSV error export, Gantt range/zoom (2025-09-18)
+## v0.2.1 — Workflow assistant, CSV error export, Gantt range/zoom (2025-09-18)
 
 - Git workflow assistant
   - Add interactive CLI `npm run git:workflow` for status → stage → commit → push → PR support
