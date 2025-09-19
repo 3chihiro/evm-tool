@@ -39,6 +39,18 @@ export default function App() {
     } catch { return { holidays: [] } }
   })
 
+  // 設定: 最小表示月数（2/3/6）
+  const [minMonths, setMinMonths] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem('evm_min_months')); return (v === 2 || v === 3 || v === 6) ? v : 3 } catch { return 3 }
+  })
+  useEffect(() => { try { localStorage.setItem('evm_min_months', String(minMonths)) } catch {} }, [minMonths])
+
+  // 設定: 初期ズーム（px/日）
+  const [pxPerDay, setPxPerDay] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem('evm_px_per_day')); return [8,12,16,24,32].includes(v) ? v : 16 } catch { return 16 }
+  })
+  useEffect(() => { try { localStorage.setItem('evm_px_per_day', String(pxPerDay)) } catch {} }, [pxPerDay])
+
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     if (!f) return
@@ -142,6 +154,20 @@ export default function App() {
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="file" accept=".csv" onChange={onFileChange} />
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
+            最小月数
+            <select value={minMonths} onChange={(e) => setMinMonths(Number(e.target.value))} style={{ fontSize: 12 }}>
+              <option value={2}>2</option>
+              <option value={3}>3</option>
+              <option value={6}>6</option>
+            </select>
+          </label>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
+            ズーム(px/日)
+            <select value={pxPerDay} onChange={(e) => setPxPerDay(Number(e.target.value))} style={{ fontSize: 12 }}>
+              {[8,12,16,24,32].map((n) => (<option key={n} value={n}>{n}</option>))}
+            </select>
+          </label>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
             未知依存の扱い
             <select
               value={unknownDepsMode}
@@ -168,6 +194,8 @@ export default function App() {
           selectedIds={selectedIds}
           onSelect={setSelectedIds}
           calendar={calendar}
+          minMonths={minMonths}
+          pxPerDay={pxPerDay}
         />
         </ErrorBoundary>
       </section>

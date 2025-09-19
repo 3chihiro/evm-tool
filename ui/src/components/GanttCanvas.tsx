@@ -7,7 +7,7 @@ import { isWorkingDayISO, type Calendar } from '../../../evm-mvp-sprint1/evm'
 
 type GTask = { id: string; name: string; start: string; end: string; progress: number; aStart?: string; aEnd?: string }
 
-const cfg = { pxPerDay: 16 }
+// cfg は props から供給（pxPerDay）
 
 export default function GanttCanvas({
   tasks,
@@ -15,13 +15,18 @@ export default function GanttCanvas({
   selectedIds,
   onSelect,
   calendar,
+  minMonths,
+  pxPerDay,
 }: {
   tasks: TaskRow[]
   onTasksChange: (cmd: Command<TaskRow[]>) => void
   selectedIds: (string | number)[]
   onSelect: (ids: (string | number)[]) => void
   calendar: Calendar
+  minMonths: number
+  pxPerDay: number
 }) {
+  const cfg = useMemo(() => ({ pxPerDay }), [pxPerDay])
   const headerRef = useRef<HTMLCanvasElement | null>(null)
   const bodyRef = useRef<HTMLCanvasElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -115,24 +120,27 @@ export default function GanttCanvas({
     const maxF = new Date(Math.max(...finishes.map((d: Date) => +d)))
     if (!Number.isFinite(+minS) || !Number.isFinite(+maxF)) return ['2023-12-30', '2024-01-20']
 
-    // Expand to month boundaries and ensure at least multiple months are visible
+    // Expand to month boundaries and ensure at least minMonths months are visible
     const firstOfMonth = (d: Date) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
     const lastOfMonth = (d: Date) => { const x = new Date(d); x.setMonth(x.getMonth() + 1, 0); x.setHours(0,0,0,0); return x }
     const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x }
     let s = firstOfMonth(minS)
     let f = lastOfMonth(maxF)
-    const sameMonth = s.getFullYear() === f.getFullYear() && s.getMonth() === f.getMonth()
-    if (sameMonth) {
-      // If tasks fall within a single month, show previous and next months as context
-      s = firstOfMonth(addMonths(s, -1))
-      f = lastOfMonth(addMonths(f, +1))
+    const monthsBetweenInclusive = (a: Date, b: Date) => (b.getFullYear()*12 + b.getMonth()) - (a.getFullYear()*12 + a.getMonth()) + 1
+    const have = monthsBetweenInclusive(s, f)
+    if (have < Math.max(1, minMonths)) {
+      const need = Math.max(1, minMonths) - have
+      const left = Math.floor(need / 2)
+      const right = need - left
+      s = firstOfMonth(addMonths(s, -left))
+      f = lastOfMonth(addMonths(f, +right))
     }
     try {
       return [s.toISOString().slice(0, 10), f.toISOString().slice(0, 10)] as const
     } catch {
       return ['2023-12-30', '2024-01-20']
     }
-  }, [tasks, demo])
+  }, [tasks, demo, minMonths])
 
   // 依存関係（predIds）から「後続タスク」マップを構築（id -> 直接の後続タスクID配列）
   const succMap = useMemo(() => {
@@ -391,6 +399,25 @@ export default function GanttCanvas({
         bctx.fillRect(s.x, 0, s.w, bodyHeight)
       }
     })
+
+    // タスクの実際の範囲（拡張前）を算出して、それ以外は淡色化（うっすらグレー）
+    const allStarts = displayTasks.map((t) => new Date(t.start)).filter((d) => Number.isFinite(+d))
+    const allEnds = displayTasks.map((t) => new Date(t.end)).filter((d) => Number.isFinite(+d))
+    if (allStarts.length && allEnds.length) {
+      const taskMin = new Date(Math.min(...allStarts.map((d) => +d)))
+      const taskMax = new Date(Math.max(...allEnds.map((d) => +d)))
+      const taskMinISO = taskMin.toISOString().slice(0,10)
+      const taskMaxISO = taskMax.toISOString().slice(0,10)
+      daySegs.forEach((s, i) => {
+        const d = new Date(startDate)
+        d.setDate(startDate.getDate() + i)
+        const iso = d.toISOString().slice(0,10)
+        if (iso < taskMinISO || iso > taskMaxISO) {
+          bctx.fillStyle = 'rgba(0,0,0,0.04)'
+          bctx.fillRect(s.x, 0, s.w, bodyHeight)
+        }
+      })
+    }
     bctx.strokeStyle = '#f5f5f5'
     daySegs.forEach((s) => {
       bctx.beginPath()
@@ -410,6 +437,31 @@ export default function GanttCanvas({
       bctx.stroke()
     })
     bctx.restore()
+
+    // 今日の縦ライン
+    try {
+      const todayISO = new Date().toISOString().slice(0,10)
+      if (new Date(todayISO) >= new Date(chartStart) && new Date(todayISO) <= new Date(chartEnd)) {
+        const x = dateToX(todayISO, chartStart, cfg)
+        bctx.save()
+        bctx.strokeStyle = '#ff1744'
+        bctx.lineWidth = 1
+        bctx.beginPath()
+        bctx.moveTo(x + 0.5, 0)
+        bctx.lineTo(x + 0.5, bodyHeight)
+        bctx.stroke()
+        bctx.restore()
+        // ヘッダ側にも軽く表示
+        hctx.save()
+        hctx.strokeStyle = '#ff1744'
+        hctx.lineWidth = 1
+        hctx.beginPath()
+        hctx.moveTo(x + 0.5, 0)
+        hctx.lineTo(x + 0.5, headerHeight)
+        hctx.stroke()
+        hctx.restore()
+      }
+    } catch {}
 
     // 当たり判定の構築（計画バー基準。縦方向は計画バー帯に限定）
     hitsRef.current = displayTasks.map((t, i) => {
