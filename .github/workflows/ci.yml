@@ -1,5 +1,5 @@
 name: ci
-on: [push]
+on: [push, pull_request]
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,4 +9,12 @@ jobs:
         with:
           node-version: 18
       - run: npm ci || npm i
-      - run: npm run -if-present build
+      - run: npm test --silent
+      - run: npm run -if-present test:ui
+      - name: Type-check Electron main
+        run: npx tsc -p electron
+      - name: Build renderer
+        run: npm run -if-present build:renderer
+      - name: Package Electron (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm run -if-present build:electron

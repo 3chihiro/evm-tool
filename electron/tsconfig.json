@@ -2,7 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "module": "CommonJS",
-    "outDir": "../dist",
+    "outDir": "../dist-electron",
     "rootDir": ".",
     "moduleResolution": "Node",
     "types": ["node"],
@@ -10,4 +10,3 @@
   },
   "include": ["./*.ts"]
 }
-

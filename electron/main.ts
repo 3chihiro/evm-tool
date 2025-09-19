@@ -18,7 +18,8 @@ function createWindow() {
     win.loadURL('http://localhost:5173');
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
-    const indexHtml = join(process.cwd(), 'ui', 'dist', 'index.html');
+    // In packaged app, resolve relative to compiled main.js directory
+    const indexHtml = join(__dirname, '..', 'ui', 'dist', 'index.html');
     win.loadFile(indexHtml);
   }
 
