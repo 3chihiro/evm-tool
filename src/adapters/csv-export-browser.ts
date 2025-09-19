@@ -1,4 +1,4 @@
-import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
+import type { TaskRow, ImportError } from '../../evm-mvp-sprint1/src.types'
 
 export function toCsvBrowser(tasks: TaskRow[]): string {
   const headers = [
@@ -49,3 +49,20 @@ export function triggerDownloadCsv(filename: string, csvText: string) {
   URL.revokeObjectURL(url)
 }
 
+// Export only import errors to CSV for auditing.
+// Columns: Row,Column,Message,Value
+export function errorsToCsv(errors: ImportError[]): string {
+  const headers = ['Row','Column','Message','Value']
+  const esc = (s: string | number | undefined | null) => {
+    if (s == null) return ''
+    const t = String(s)
+    if (t.includes(',') || t.includes('"') || t.includes('\n')) return '"' + t.replace(/"/g, '""') + '"'
+    return t
+  }
+  const lines = [headers.join(',')]
+  for (const e of errors) {
+    const row = [e.row, e.column ?? '', e.message ?? '', e.value ?? ''].map(esc)
+    lines.push(row.join(','))
+  }
+  return lines.join('\n') + '\n'
+}

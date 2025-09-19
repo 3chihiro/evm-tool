@@ -6,7 +6,8 @@ import ErrorBoundary from './components/ErrorBoundary'
 import EvmCard from './components/EvmCard'
 import Modal from './components/Modal'
 import type { TaskRow } from '../../evm-mvp-sprint1/src.types'
-import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv } from '../../src/adapters'
+import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv, errorsToCsv } from '../../src/adapters'
+import type { ImportError } from '../../evm-mvp-sprint1/src.types'
 import { createUseHistory, type Command } from './lib/history'
 import type { Calendar } from '../../evm-mvp-sprint1/evm'
 
@@ -16,6 +17,7 @@ export default function App() {
   const hist = useTasksHistory()
   const tasks = hist.present
   const [errors, setErrors] = useState<string[]>([])
+  const [rawErrors, setRawErrors] = useState<ImportError[] | undefined>(undefined)
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [errorByColumn, setErrorByColumn] = useState<Record<string, number> | undefined>(undefined)
   const [importStats, setImportStats] = useState<{ rows: number; imported: number; failed: number } | undefined>(undefined)
@@ -45,6 +47,7 @@ export default function App() {
       const text = String(reader.result ?? '')
       const res = parseCsvTextBrowser(text, { unknownDeps: unknownDepsMode })
       hist.set(res.tasks)
+      setRawErrors(res.errors)
       setErrors(res.errors.map((er) => `Row ${er.row} ${er.column ?? ''} ${er.message}`))
       setErrorByColumn(res.stats.byColumn)
       setImportStats({ rows: res.stats.rows, imported: res.stats.imported, failed: res.stats.failed })
@@ -119,6 +122,13 @@ export default function App() {
                     <li key={i} style={{ color: '#b00', fontSize: 12 }}>{e}</li>
                   ))}
                 </ul>
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn" onClick={() => {
+                    if (!rawErrors || rawErrors.length === 0) return
+                    const csv = errorsToCsv(rawErrors)
+                    triggerDownloadCsv('import-errors.csv', csv)
+                  }}>エラーCSVを保存</button>
+                </div>
               </div>
             )}
           </div>
@@ -188,6 +198,13 @@ export default function App() {
                 <li key={i} style={{ color: '#b00', fontSize: 12 }}>{e}</li>
               ))}
             </ul>
+            <div style={{ marginTop: 8 }}>
+              <button className="btn" onClick={() => {
+                if (!rawErrors || rawErrors.length === 0) return
+                const csv = errorsToCsv(rawErrors)
+                triggerDownloadCsv('import-errors.csv', csv)
+              }}>エラーCSVを保存</button>
+            </div>
           </div>
         )}
         <div style={{ marginTop: 12 }}>
