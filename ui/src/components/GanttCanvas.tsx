@@ -370,17 +370,49 @@ export default function GanttCanvas({
     hctx.strokeRect(0, 0, contentW, headerHeight)
 
     hctx.fillStyle = '#333'
-    hctx.font = '12px sans-serif'
+    hctx.textAlign = 'center'
+    // 見やすさのためフォントを行ごとに調整
+    const ymFont = '12px sans-serif'
+    const dayFont = pxPerDay >= 16 ? '11px sans-serif' : (pxPerDay >= 12 ? '10px sans-serif' : '9px sans-serif')
+    const wdFont  = dayFont
     let y = 14
-    ;(['yearMonth', 'day', 'weekday'] as const).forEach((level, idx) => {
-      const segments = (header as any)[level] as Array<{ label: string; x: number; w: number }>
-      segments.forEach((s) => {
-        hctx.fillText(s.label, s.x + 4, y)
-        // グリッド枠
-        hctx.strokeStyle = idx === 0 ? '#cccccc' : '#e6e6e6'
-        hctx.strokeRect(s.x, (y - 12) + (level === 'yearMonth' ? 0 : level === 'day' ? 16 : 32), s.w, 16)
-      })
-      y += 16
+
+    // 年月ラベル（中央寄せ）
+    hctx.font = ymFont
+    const ymSegsHeader = (header as any)['yearMonth'] as Array<{ label: string; x: number; w: number }>
+    ymSegsHeader.forEach((s) => {
+      const cx = s.x + s.w / 2
+      hctx.fillText(s.label, cx, y)
+      hctx.strokeStyle = '#cccccc'
+      hctx.strokeRect(s.x, y - 12, s.w, 16)
+    })
+    y += 16
+
+    // 日ラベル（密度に応じて間引き）
+    hctx.font = dayFont
+    const daySegsHeader = (header as any)['day'] as Array<{ label: string; x: number; w: number }>
+    const dayStride = pxPerDay >= 20 ? 1 : pxPerDay >= 16 ? 1 : pxPerDay >= 12 ? 2 : 7
+    daySegsHeader.forEach((s, i) => {
+      if (i % dayStride === 0) {
+        const label = pxPerDay >= 12 ? s.label : String(Number(s.label)) // 小さいときは先頭ゼロを省略
+        const cx = s.x + s.w / 2
+        hctx.fillText(label, cx, y)
+      }
+      hctx.strokeStyle = '#e6e6e6'
+      hctx.strokeRect(s.x, y - 12, s.w, 16)
+    })
+    y += 16
+
+    // 曜日ラベル（間引きは日と同じ）
+    hctx.font = wdFont
+    const wdSegs = (header as any)['weekday'] as Array<{ label: string; x: number; w: number }>
+    wdSegs.forEach((s, i) => {
+      if (i % dayStride === 0) {
+        const cx = s.x + s.w / 2
+        hctx.fillText(s.label, cx, y)
+      }
+      hctx.strokeStyle = '#e6e6e6'
+      hctx.strokeRect(s.x, y - 12, s.w, 16)
     })
 
     // ボディ描画
