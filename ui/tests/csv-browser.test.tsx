@@ -33,5 +33,7 @@ describe('Browser CSV parser (parseCsvTextBrowser)', () => {
     expect(res.stats.imported).toBe(2)
     expect(res.stats.failed).toBe(0)
     expect(res.errors.some(e => e.column === 'Dependencies')).toBe(false)
+    // dep stats includes unknownRefs in warn mode
+    expect(res.stats.dep?.unknownRefs).toBe(1)
   })
 })

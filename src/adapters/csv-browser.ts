@@ -216,12 +216,15 @@ export function parseCsvTextBrowser(csvText: string, options?: CsvParseOptions):
   }
 
   // 未知の依存TaskID検出
+  let unknownWarnCount = 0
   for (const c of candidates) {
     const unknown = (c.task.predIds ?? []).filter((id) => !allTaskIds.has(id))
     if (unknown.length && opts.unknownDeps === 'error') {
       const depsCell = getCell(rows[c.rowIndex - 1], hmap['Dependencies'] ?? -1)
       errors.push({ row: c.rowIndex, column: 'Dependencies', message: `Dependencies に存在しない TaskID: ${unknown.join(', ')}`, value: depsCell })
       continue
+    } else if (unknown.length && opts.unknownDeps === 'warn') {
+      unknownWarnCount += unknown.length
     }
     tasks.push(c.task)
   }
@@ -235,5 +238,58 @@ export function parseCsvTextBrowser(csvText: string, options?: CsvParseOptions):
   for (const e of errors) {
     if (e.column) byColumn[e.column] = (byColumn[e.column] ?? 0) + 1
   }
-  return { tasks, errors, stats: { rows: dataRows, imported, failed: Math.max(0, failedSet.size), byColumn } }
+  // 依存整合性（簡易）: サイクルと孤立ノード数
+  const depStats = (() => {
+    if (tasks.length === 0) return { cycles: 0, isolated: 0 }
+    const idToIdx = new Map<number, number>()
+    tasks.forEach((t, i) => idToIdx.set(t.taskId, i))
+    const n = tasks.length
+    const adj: number[][] = Array.from({ length: n }, () => [])
+    const indeg = new Array<number>(n).fill(0)
+    const outdeg = new Array<number>(n).fill(0)
+    for (let i = 0; i < n; i++) {
+      const preds = tasks[i].predIds ?? []
+      for (const pid of preds) {
+        const j = idToIdx.get(pid)
+        if (j == null) continue
+        adj[j].push(i)
+        indeg[i]++
+        outdeg[j]++
+      }
+    }
+    const color = new Array<number>(n).fill(0)
+    const inCycle = new Array<boolean>(n).fill(false)
+    const stack: number[] = []
+    const cyclesList: number[][] = []
+    const seenCycleKeys = new Set<string>()
+    const dfs = (u: number) => {
+      color[u] = 1
+      stack.push(u)
+      for (const v of adj[u]) {
+        if (color[v] === 0) dfs(v)
+        else if (color[v] === 1) {
+          inCycle[u] = true; inCycle[v] = true
+          const idx = stack.indexOf(v)
+          if (idx !== -1) {
+            const cycIdxs = stack.slice(idx).concat([v])
+            const cycIds = cycIdxs.map(i => tasks[i].taskId)
+            const key = JSON.stringify([...new Set(cycIds)])
+            if (!seenCycleKeys.has(key) && cyclesList.length < 3) {
+              cyclesList.push([...new Set(cycIds)])
+              seenCycleKeys.add(key)
+            }
+          }
+        }
+      }
+      stack.pop()
+      color[u] = 2
+    }
+    for (let i = 0; i < n; i++) if (color[i] === 0) dfs(i)
+    const cycles = inCycle.reduce((a, b) => a + (b ? 1 : 0), 0)
+    let isolated = 0
+    for (let i = 0; i < n; i++) if (indeg[i] === 0 && outdeg[i] === 0) isolated++
+    return { cycles, isolated, unknownRefs: unknownWarnCount || undefined, cyclesList: cyclesList.length ? cyclesList : undefined }
+  })()
+
+  return { tasks, errors, stats: { rows: dataRows, imported, failed: Math.max(0, failedSet.size), byColumn, dep: depStats } }
 }

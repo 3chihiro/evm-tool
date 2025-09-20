@@ -560,6 +560,15 @@ export default function GanttCanvas({
         bctx.lineTo(toX - 10, toY)
         bctx.lineTo(toX, toY)
         bctx.stroke()
+        // arrowhead (pointing to +x on final segment)
+        const ah = 5
+        bctx.fillStyle = bctx.strokeStyle as string
+        bctx.beginPath()
+        bctx.moveTo(toX, toY)
+        bctx.lineTo(toX - ah, toY - ah * 0.8)
+        bctx.lineTo(toX - ah, toY + ah * 0.8)
+        bctx.closePath()
+        bctx.fill()
       })
     })
     bctx.restore()
@@ -598,6 +607,28 @@ export default function GanttCanvas({
         bctx.strokeStyle = '#d32f2f'
         bctx.lineWidth = 2
         bctx.strokeRect(p.x - 1, top + 13, p.w + 2, 12)
+      }
+      // 依存バッジ（pred数: 左 / succ数: 右）
+      const predCount = (predMap.get(t.id) ?? []).length
+      const succCount = (succMap.get(t.id) ?? []).length
+      bctx.font = '10px sans-serif'
+      bctx.textAlign = 'center'
+      bctx.textBaseline = 'middle'
+      if (predCount > 0) {
+        const bx = p.x - 10
+        const by = top + 19
+        bctx.fillStyle = '#f1f1f1'
+        bctx.strokeStyle = '#999'
+        bctx.beginPath(); bctx.arc(bx, by, 7, 0, Math.PI*2); bctx.fill(); bctx.stroke()
+        bctx.fillStyle = '#333'; bctx.fillText(String(predCount), bx, by)
+      }
+      if (succCount > 0) {
+        const bx = p.x + p.w + 10
+        const by = top + 19
+        bctx.fillStyle = '#f1f1f1'
+        bctx.strokeStyle = '#999'
+        bctx.beginPath(); bctx.arc(bx, by, 7, 0, Math.PI*2); bctx.fill(); bctx.stroke()
+        bctx.fillStyle = '#333'; bctx.fillText(String(succCount), bx, by)
       }
       // 行区切り線
       bctx.strokeStyle = '#efefef'

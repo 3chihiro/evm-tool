@@ -36,6 +36,12 @@ export interface ImportResult {
     imported: number;
     failed: number; // rows with at least one error considered failed
     byColumn?: Record<string, number>; // optional: error counts by column name
+    dep?: {
+      cycles: number;
+      isolated: number;
+      unknownRefs?: number; // refs to unknown TaskID (count), when unknownDeps='warn'
+      cyclesList?: number[][]; // sample cycles (taskId sequences)
+    }; // optional: dependency integrity quick report
   };
 }
 

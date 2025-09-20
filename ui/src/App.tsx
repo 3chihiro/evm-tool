@@ -20,7 +20,8 @@ export default function App() {
   const [rawErrors, setRawErrors] = useState<ImportError[] | undefined>(undefined)
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
   const [errorByColumn, setErrorByColumn] = useState<Record<string, number> | undefined>(undefined)
-  const [importStats, setImportStats] = useState<{ rows: number; imported: number; failed: number } | undefined>(undefined)
+  const [importStats, setImportStats] = useState<{ rows: number; imported: number; failed: number; dep?: { cycles: number; isolated: number; unknownRefs?: number; cyclesList?: number[][] } } | undefined>(undefined)
+  const [liveMessage, setLiveMessage] = useState<string>('')
   const [unknownDepsMode, setUnknownDepsMode] = useState<'error' | 'warn'>(() => {
     try {
       const v = localStorage.getItem('evm_unknown_deps')
@@ -28,6 +29,7 @@ export default function App() {
     } catch { return 'error' }
   })
   const [showImportDialog, setShowImportDialog] = useState<boolean>(false)
+  const [depOpen, setDepOpen] = useState<boolean>(true)
   const [calendar, setCalendar] = useState<Calendar>(() => {
     // restore from localStorage
     try {
@@ -62,7 +64,12 @@ export default function App() {
       setRawErrors(res.errors)
       setErrors(res.errors.map((er) => `Row ${er.row} ${er.column ?? ''} ${er.message}`))
       setErrorByColumn(res.stats.byColumn)
-      setImportStats({ rows: res.stats.rows, imported: res.stats.imported, failed: res.stats.failed })
+      const stats = { rows: res.stats.rows, imported: res.stats.imported, failed: res.stats.failed, dep: res.stats.dep }
+      setImportStats(stats)
+      // 折りたたみの初期状態: 問題があるときは開く
+      const openInit = !!(res.stats.dep && ((res.stats.dep.cycles ?? 0) > 0 || (res.stats.dep.unknownRefs ?? 0) > 0))
+      setDepOpen(openInit)
+      setLiveMessage(`CSVを読み込みました。行数 ${res.stats.rows}、取込 ${res.stats.imported}、失敗 ${res.stats.failed}`)
       setSelectedIds([])
       setShowImportDialog(true)
     }
@@ -115,15 +122,65 @@ export default function App() {
 
   return (
     <div className="app-grid">
+      {/* aria-live for accessibility announcements */}
+      <div aria-live="polite" aria-atomic="true" style={{ position: 'absolute', left: -9999, top: 'auto', width: 1, height: 1, overflow: 'hidden' }}>{liveMessage}</div>
       <Modal open={showImportDialog} title="CSVインポート結果" onClose={() => setShowImportDialog(false)}>
         {importStats ? (
           <div>
             <div style={{ marginBottom: 8, fontSize: 13 }}>
               行数 {importStats.rows} / 取込 {importStats.imported} / 失敗 {importStats.failed}
             </div>
+            {importStats.dep && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#333' }}>
+                依存: 循環 {importStats.dep.cycles} / 孤立 {importStats.dep.isolated}
+                {typeof importStats.dep.unknownRefs === 'number' && unknownDepsMode === 'warn' && (
+                  <> / 未知参照 {importStats.dep.unknownRefs}</>
+                )}
+              </div>
+            )}
+            {importStats?.dep?.cyclesList && importStats.dep.cyclesList.length > 0 && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#333' }}>
+                循環例: {importStats.dep.cyclesList.slice(0,1).map((arr, i) => (
+                  <span key={i}>{arr.concat(arr[0]).join(' → ')}</span>
+                ))}
+              </div>
+            )}
             {errorByColumn && Object.keys(errorByColumn).length > 0 && (
               <div style={{ marginBottom: 8, fontSize: 12, color: '#333' }}>
                 列別件数: {Object.entries(errorByColumn).map(([k,v]) => `${k}:${v}`).join(' / ')}
+              </div>
+            )}
+            {importStats?.dep && (
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#333', border: '1px solid #eee', borderRadius: 6 }}>
+                <button
+                  className="btn"
+                  aria-expanded={depOpen}
+                  onClick={() => setDepOpen(v => !v)}
+                  style={{ width: '100%', textAlign: 'left', padding: '6px 8px', borderRadius: '6px 6px 0 0', border: 'none', background: '#fafafa' }}
+                >
+                  <span style={{ marginRight: 6 }}>{depOpen ? '▾' : '▸'}</span>
+                  <span style={{ fontWeight: 600 }}>依存チェック</span>
+                  <span style={{ marginLeft: 8, color: '#666' }}>
+                    （循環 {importStats.dep.cycles} / 孤立 {importStats.dep.isolated}
+                    {typeof importStats.dep.unknownRefs === 'number' && unknownDepsMode === 'warn' && (
+                      <> / 未知参照 {importStats.dep.unknownRefs}</>
+                    )}
+                    ）
+                  </span>
+                </button>
+                {depOpen && (
+                  <div style={{ padding: '6px 8px' }}>
+                    {importStats.dep.cyclesList && importStats.dep.cyclesList.length > 0 ? (
+                      <div>
+                        循環例: {importStats.dep.cyclesList.slice(0, 3).map((arr, i) => (
+                          <span key={i} style={{ marginRight: 8 }}>{arr.concat(arr[0]).join(' → ')}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div>詳細なし</div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {errors.length > 0 && (
@@ -214,6 +271,14 @@ export default function App() {
             {importStats && (
               <div style={{ margin: '4px 0', fontSize: 12, color: '#333' }}>
                 要約: 行数 {importStats.rows} / 取込 {importStats.imported} / 失敗 {importStats.failed}
+                {importStats.dep && (
+                  <>
+                    {' '}・ 依存: 循環 {importStats.dep.cycles} / 孤立 {importStats.dep.isolated}
+                    {typeof importStats.dep.unknownRefs === 'number' && unknownDepsMode === 'warn' && (
+                      <> / 未知参照 {importStats.dep.unknownRefs}</>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {errorByColumn && Object.keys(errorByColumn).length > 0 && (
@@ -231,6 +296,7 @@ export default function App() {
                 if (!rawErrors || rawErrors.length === 0) return
                 const csv = errorsToCsv(rawErrors)
                 triggerDownloadCsv('import-errors.csv', csv)
+                setLiveMessage('インポートエラーのCSVを保存しました')
               }}>エラーCSVを保存</button>
             </div>
           </div>
