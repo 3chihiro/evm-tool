@@ -167,6 +167,46 @@ async function phase3() {
   }
 }
 
+async function phase3b() {
+  // Optional: CI 監視と（PRがあれば）自動マージ支援（GitHub CLI 依存）
+  logSection('Phase 3b: CI 監視と自動マージ（任意）');
+  if (!hasGh()) {
+    console.log('GitHub CLI (gh) が見つかりません。Actions タブでご確認ください。');
+    return;
+  }
+  const branch = sh('git rev-parse --abbrev-ref HEAD');
+  const watch = await ask('Actions を監視しますか？（gh run watch --exit-status を実行）[y/N]: ');
+  if (/^y(es)?$/i.test(watch)) {
+    try {
+      // 直近の実行を監視。未起動の場合は適宜 GitHub 側の遅延がある点に留意。
+      console.log('gh run watch --exit-status を実行します...');
+      execSync('gh run watch --exit-status', { stdio: 'inherit' });
+    } catch (e) {
+      console.log('watch 中にエラーが発生:', e?.stderr?.toString?.() || e.message);
+    }
+  }
+
+  // PR が存在すれば、自動マージのオプションを提示
+  const prStatus = sh('gh pr status');
+  const hasOpenPr = typeof prStatus === 'string' && /Current branch has an open pull request/i.test(prStatus);
+  if (hasOpenPr) {
+    console.log('\n現在のブランチに対するPRが見つかりました。');
+    console.log(prStatus);
+    const auto = await ask('CI 成功後に Squash マージし、ブランチを削除しますか？ [gh pr merge --squash --auto --delete-branch] [y/N]: ');
+    if (/^y(es)?$/i.test(auto)) {
+      const res = sh('gh pr merge --squash --auto --delete-branch');
+      if (res?.error) {
+        console.log('自動マージの起動に失敗しました。PR の状態/権限をご確認ください。');
+        console.log(res.stderr);
+      } else {
+        console.log('自動マージを設定しました。PR が条件を満たすと自動でマージされます。');
+      }
+    }
+  } else {
+    console.log('現在ブランチのオープンPRは検出されませんでした。必要に応じて Phase 3 の手順で作成してください。');
+  }
+}
+
 async function phase4and5() {
   logSection('Phase 4: マージ・デプロイ監視（ガイダンス）');
   console.log('- マージ前チェック: CI ステータス、コンフリクト、レビュー完了');
@@ -193,7 +233,7 @@ async function phase4and5() {
   await phase1();
   await phase2();
   await phase3();
+  await phase3b();
   await phase4and5();
   console.log('\n完了: 必要に応じて次のステップに進んでください。');
 })();
-
