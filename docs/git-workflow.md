@@ -7,6 +7,7 @@
 ## 使い方
 ```bash
 npm run git:workflow
+npm run release:workflow
 ```
 
 ## 実施内容
@@ -17,6 +18,22 @@ npm run git:workflow
   - `gh run watch --exit-status` で Actions を監視
   - 現在ブランチの PR が存在する場合、`gh pr merge --squash --auto --delete-branch` を案内（自動マージ）
 - Phase 4/5: マージ/Actions 監視のコマンド例や対応のヒントを提示。
+
+---
+
+## リリース自動化（Release Workflow）
+- コマンド: `npm run release:workflow`
+- 概要: バージョンバンプ（patch/minor/major）→ リリースノート生成 → CHANGELOG追記（任意）→ タグ作成 → push/tags push → （任意）GitHub Release 作成
+
+### 挙動詳細
+1. バージョン入力: 現在の `package.json` の `version` を読み取り、`patch/minor/major` から選択して次の semver を提案。
+2. リリースノート: 直近タグ（`git describe --tags --abbrev=0`）以降の Conventional Commits をグルーピング（feat/fix/perf/...）。
+3. CHANGELOG: 先頭への追記を選択可能。
+4. タグ付け: `vX.Y.Z` を作成し、コミットと共に push。`gh` があれば GitHub Release も作成可能（ノートは生成内容を使用）。
+
+備考:
+- 破壊的操作（force push等）は行いません。
+- `gh` が無い場合、リリースはタグプッシュまで（GitHub上のUIからの Release 作成が必要）。
 
 ## 備考
 - 破壊的操作（force push 等）は自動では実行しません。
