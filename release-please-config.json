@@ -9,7 +9,20 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "bump-minor-pre-major": true,
+      "versioning": "default",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "refactor", "section": "Refactors" },
+        { "type": "docs", "section": "Docs" },
+        { "type": "test", "section": "Tests" },
+        { "type": "build", "section": "Build" },
+        { "type": "ci", "section": "CI" },
+        { "type": "chore", "section": "Chore" }
+      ]
     }
   }
 }

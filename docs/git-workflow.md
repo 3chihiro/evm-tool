@@ -35,6 +35,14 @@ npm run release:workflow
 - 破壊的操作（force push等）は行いません。
 - `gh` が無い場合、リリースはタグプッシュまで（GitHub上のUIからの Release 作成が必要）。
 
+### CI 連携: release-please（推奨）
+- main への push で `.github/workflows/release-please.yml` が走り、リリースPRを自動生成。
+- PRに `autorelease: pending` ラベルが付くと、`.github/workflows/automerge-release-please.yml` が自動マージを有効化（リポジトリで Auto-merge が許可されている必要あり）。
+- マージ後にタグ/Release が作成され、既存の `release.yml` により各OSパッケージを作成・添付。
+
+### PR タイトルの規約チェック
+- `.github/workflows/semantic-pr.yml` で Conventional Commits タイトルを検査（feat/fix/chore/docs/refactor/perf/test/build/ci）。
+
 ## 備考
 - 破壊的操作（force push 等）は自動では実行しません。
 - GitHub CLI (`gh`) があれば PR/Actions の監視・自動マージを対話で支援します。
