@@ -7,6 +7,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "git:workflow": "node scripts/git-workflow.js",
+    "branch:workflow": "node scripts/branch-workflow.js",
     "release:workflow": "node scripts/release-workflow.js",
     "dev": "tsc -p electron && concurrently -k \"vite --config ui/vite.config.ts\" \"wait-on tcp:5173 dist-electron/main.js dist-electron/preload.js && cross-env VITE_DEV=1 electron .\"",
     "build:renderer": "vite build --config ui/vite.config.ts",
