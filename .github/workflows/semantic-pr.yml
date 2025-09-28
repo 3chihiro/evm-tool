@@ -1,7 +1,14 @@
 name: semantic-pr
 on:
-  pull_request:
+  # Use pull_request_target to allow the action to annotate PRs from forks safely.
+  pull_request_target:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
 
 jobs:
   lint:
