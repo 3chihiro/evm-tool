@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../dist-cli",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "types": ["node"],
+    "lib": ["ES2020"],
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "../evm-mvp-sprint1/**/*.ts",
+    "./**/*.ts"
+  ],
+  "exclude": [
+    "../tests/**/*",
+    "../src/**/*",
+    "../ui/**/*"
+  ]
+}

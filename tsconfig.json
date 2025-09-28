@@ -10,5 +10,9 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "dist"
   },
-  "include": ["evm-mvp-sprint1/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "evm-mvp-sprint1/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }

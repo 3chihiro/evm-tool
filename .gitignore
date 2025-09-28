@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 dist/
 ui/dist/
+dist-cli/
 *.log
 minimal.js
 printenv.js

@@ -1,5 +1,6 @@
 import React from 'react'
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
+import { useI18n } from '../i18n/i18n'
 
 export default function TaskTable({ tasks, selectedIds = [], onSelect }: { tasks: TaskRow[]; selectedIds?: (string|number)[]; onSelect?: (ids: (string|number)[]) => void }) {
   const handleClick = (e: React.MouseEvent, id: number) => {
@@ -15,7 +16,7 @@ export default function TaskTable({ tasks, selectedIds = [], onSelect }: { tasks
   }
   return (
     <div>
-      <div className="panel-title">タスク一覧</div>
+      <div className="panel-title">{useI18n().t('panels.tasks')}</div>
       <table className="table">
         <thead>
           <tr>
