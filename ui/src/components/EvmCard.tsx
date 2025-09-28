@@ -2,6 +2,7 @@ import React, { useMemo } from 'react'
 import { formatJPY } from '../../../src/adapters'
 import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 import { computeEVM, type Calendar } from '../../../evm-mvp-sprint1/evm'
+import { useI18n } from '../i18n/i18n'
 
 export default function EvmCard({ tasks, calendar }: { tasks: TaskRow[]; calendar: Calendar }) {
   const evm = useMemo(() => {
@@ -22,6 +23,7 @@ export default function EvmCard({ tasks, calendar }: { tasks: TaskRow[]; calenda
       calendar,
     )
   }, [tasks, calendar])
+  const { t } = useI18n()
   const items: Array<[string, string]> = [
     ['PV', formatJPY(evm.PV)],
     ['EV', formatJPY(evm.EV)],
@@ -34,7 +36,7 @@ export default function EvmCard({ tasks, calendar }: { tasks: TaskRow[]; calenda
 
   return (
     <div className="card">
-      <div className="panel-title">EVM</div>
+      <div className="panel-title">{t('panels.evm')}</div>
       <div className="evm-grid">
         {items.map(([k, v]) => (
           <div key={k} className="evm-item">

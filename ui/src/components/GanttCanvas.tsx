@@ -4,6 +4,7 @@ import type { TaskRow } from '../../../evm-mvp-sprint1/src.types'
 import type { Command } from '../lib/history'
 import { hitTest, snapPx, type Hit, type DragKind } from '../lib/ganttHit'
 import { isWorkingDayISO, type Calendar } from '../../../evm-mvp-sprint1/evm'
+import { useI18n } from '../i18n/i18n'
 
 type GTask = { id: string; name: string; start: string; end: string; progress: number; aStart?: string; aEnd?: string }
 
@@ -26,6 +27,7 @@ export default function GanttCanvas({
   minMonths: number
   pxPerDay: number
 }) {
+  const { t } = useI18n()
   const cfg = useMemo(() => ({ pxPerDay }), [pxPerDay])
   const headerRef = useRef<HTMLCanvasElement | null>(null)
   const bodyRef = useRef<HTMLCanvasElement | null>(null)
@@ -1114,7 +1116,7 @@ export default function GanttCanvas({
 
   return (
     <div>
-      <div className="panel-title">ガント</div>
+      <div className="panel-title">{t('panels.gantt')}</div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 6 }}>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <span style={{ display: 'inline-block', width: 18, height: 6, background: '#59A14F', borderRadius: 2 }} />

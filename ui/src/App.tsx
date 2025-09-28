@@ -10,12 +10,14 @@ import { parseCsvTextBrowser, toCsvBrowser, triggerDownloadCsv, errorsToCsv } fr
 import type { ImportError } from '../../evm-mvp-sprint1/src.types'
 import { createUseHistory, type Command } from './lib/history'
 import type { Calendar } from '../../evm-mvp-sprint1/evm'
+import { useI18n } from './i18n/i18n'
 
 const useTasksHistory = createUseHistory<TaskRow[]>([])
 
 export default function App() {
   const hist = useTasksHistory()
   const tasks = hist.present
+  const { t, lang, setLang } = useI18n()
   const [errors, setErrors] = useState<string[]>([])
   const [rawErrors, setRawErrors] = useState<ImportError[] | undefined>(undefined)
   const [selectedIds, setSelectedIds] = useState<(string | number)[]>([])
@@ -80,12 +82,12 @@ export default function App() {
 
   const onExportPDF = useCallback(async () => {
     if (!('appBridge' in window) || typeof window.appBridge.exportPDF !== 'function') {
-      alert('Electron環境でのみPDF出力が利用できます。')
+      alert(t('alerts.pdfElectronOnly'))
       return
     }
     const saved = await window.appBridge.exportPDF({ landscape: false })
     if (saved) alert(`PDFを保存しました: ${saved}`)
-  }, [])
+  }, [t])
 
   const onExportCsv = useCallback(() => {
     const text = toCsvBrowser(tasks)
@@ -124,7 +126,7 @@ export default function App() {
     <div className="app-grid">
       {/* aria-live for accessibility announcements */}
       <div aria-live="polite" aria-atomic="true" style={{ position: 'absolute', left: -9999, top: 'auto', width: 1, height: 1, overflow: 'hidden' }}>{liveMessage}</div>
-      <Modal open={showImportDialog} title="CSVインポート結果" onClose={() => setShowImportDialog(false)}>
+      <Modal open={showImportDialog} title={t('modal.importResult')} onClose={() => setShowImportDialog(false)}>
         {importStats ? (
           <div>
             <div style={{ marginBottom: 8, fontSize: 13 }}>
@@ -206,12 +208,12 @@ export default function App() {
         )}
       </Modal>
       <header className="header">
-        <h1>EVM Tool UI Shell</h1>
+        <h1>{t('app.title')}</h1>
         <div style={{ marginLeft: '16px', fontSize: 12, color: '#666' }}>{projectName && `（${projectName}）`}</div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <input type="file" accept=".csv" onChange={onFileChange} />
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
-            最小月数
+            {t('header.minMonths')}
             <select value={minMonths} onChange={(e) => setMinMonths(Number(e.target.value))} style={{ fontSize: 12 }}>
               <option value={2}>2</option>
               <option value={3}>3</option>
@@ -219,13 +221,13 @@ export default function App() {
             </select>
           </label>
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
-            ズーム(px/日)
+            {t('header.zoom')}
             <select value={pxPerDay} onChange={(e) => setPxPerDay(Number(e.target.value))} style={{ fontSize: 12 }}>
               {[8,12,16,24,32].map((n) => (<option key={n} value={n}>{n}</option>))}
             </select>
           </label>
           <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
-            未知依存の扱い
+            {t('header.unknownDeps')}
             <select
               value={unknownDepsMode}
               onChange={(e) => {
@@ -239,8 +241,15 @@ export default function App() {
               <option value="warn">警告（取り込む）</option>
             </select>
           </label>
-          <button onClick={onExportCsv}>CSV出力</button>
-          <button onClick={onExportPDF}>PDF出力</button>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 12, color: '#333' }}>
+            {t('header.lang')}
+            <select value={lang} onChange={(e) => setLang(e.target.value === 'en' ? 'en' : 'ja')} style={{ fontSize: 12 }}>
+              <option value="ja">{t('header.lang.ja')}</option>
+              <option value="en">{t('header.lang.en')}</option>
+            </select>
+          </label>
+          <button onClick={onExportCsv}>{t('buttons.exportCsv')}</button>
+          <button onClick={onExportPDF}>{t('buttons.exportPdf')}</button>
         </div>
       </header>
       <section className="gantt">
@@ -267,7 +276,7 @@ export default function App() {
         <EvmCard tasks={tasks} calendar={calendar} />
         {errors.length > 0 && (
           <div style={{ marginTop: 8 }}>
-            <div className="panel-title">インポートエラー</div>
+            <div className="panel-title">{t('panel.importErrors')}</div>
             {importStats && (
               <div style={{ margin: '4px 0', fontSize: 12, color: '#333' }}>
                 要約: 行数 {importStats.rows} / 取込 {importStats.imported} / 失敗 {importStats.failed}
@@ -302,7 +311,7 @@ export default function App() {
           </div>
         )}
         <div style={{ marginTop: 12 }}>
-          <div className="panel-title">祝日設定</div>
+          <div className="panel-title">{t('panel.holidays')}</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="date" onChange={(e) => onAddHoliday(e.target.value)} />
             <button className="btn" onClick={() => { localStorage.removeItem('evm_calendar_holidays'); setCalendar({ holidays: [] }) }}>クリア</button>
@@ -315,7 +324,7 @@ export default function App() {
             ))}
           </div>
           <div style={{ marginTop: 12 }}>
-            <div className="panel-title">固定休日（曜日）</div>
+            <div className="panel-title">{t('panel.offweek')}</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {['日','月','火','水','木','金','土'].map((label, idx) => (
                 <label key={idx} style={{ fontSize: 12 }}>
